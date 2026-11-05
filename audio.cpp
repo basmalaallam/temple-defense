@@ -20,7 +20,7 @@ const char* const clickFile = "assets/sounds/click.mp3";
 const char* const victoryFile = "assets/sounds/victory.mp3";
 const char* const gameOverFile = "assets/sounds/game_over.mp3";
 
-constexpr int clickVoiceCount = 6; // Lets quick clicks overlap instead of cutting off.
+const int clickVoiceCount = 6; // Lets quick clicks overlap instead of cutting off.
 
 ma_engine engine;
 bool engineReady = false;
@@ -175,13 +175,13 @@ void stopResults() {
 }
 
 void volumeUp() {
-    volume = std::min(100, volume + volumeStep);
+    volume = (std::min)(100, volume + volumeStep);
     applyVolume();
     logEvent("volume up");
 }
 
 void volumeDown() {
-    volume = std::max(0, volume - volumeStep);
+    volume = (std::max)(0, volume - volumeStep);
     applyVolume();
     logEvent("volume down");
 }

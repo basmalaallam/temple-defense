@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <random>
 #include <vector>
@@ -100,8 +101,8 @@ struct Enemy {
 
 // 2. Wave data and game settings
 
-constexpr int waveCount = 3;
-constexpr int waveEnemyCounts[waveCount] = {3, 5, 10};
+const int waveCount = 3;
+const int waveEnemyCounts[waveCount] = {3, 5, 10};
 
 struct WaveProgress {
     int waveIndex = 0; // Zero-based; waveCount means all waves are cleared.
@@ -109,45 +110,45 @@ struct WaveProgress {
     float spawnTimer = 0.0f;
 };
 
-constexpr float menuCenterX = 0.1f;
-constexpr float menuButtonWidth = 0.64f;
-constexpr float menuButtonHeight = 0.17f;
-constexpr float menuButtonY[] = {0.0f, -0.26f};
-constexpr float mainMenuButtonY[] = {0.06f, -0.18f, -0.42f};
-constexpr float soundButtonY[] = {0.16f, -0.07f, -0.30f, -0.53f};
-constexpr float pauseButtonY[] = {0.18f, -0.08f, -0.34f};
-constexpr float pauseButtonWidth = 0.72f;
+const float menuCenterX = 0.1f;
+const float menuButtonWidth = 0.64f;
+const float menuButtonHeight = 0.17f;
+const float menuButtonY[] = {0.0f, -0.26f};
+const float mainMenuButtonY[] = {0.06f, -0.18f, -0.42f};
+const float soundButtonY[] = {0.16f, -0.07f, -0.30f, -0.53f};
+const float pauseButtonY[] = {0.18f, -0.08f, -0.34f};
+const float pauseButtonWidth = 0.72f;
 
 // Drawing and click detection must use these same boundaries.
-constexpr int laneCount = 4;
-constexpr float fieldLeft = -0.65f;
-constexpr float fieldRight = 0.85f;
-constexpr float fieldTop = 0.55f;
-constexpr float laneHeight = 0.3f;
-constexpr float fieldBottom = fieldTop - laneCount * laneHeight;
-constexpr int playerCardCount = 3;
-constexpr float cardFirstX = -0.48f;
-constexpr float cardSpacing = 0.28f;
-constexpr float cardY = 0.82f;
-constexpr float cardWidth = 0.23f;
-constexpr float cardHeight = 0.30f;
-constexpr PlayerType cardTypes[] = {
+const int laneCount = 4;
+const float fieldLeft = -0.65f;
+const float fieldRight = 0.85f;
+const float fieldTop = 0.55f;
+const float laneHeight = 0.3f;
+const float fieldBottom = fieldTop - laneCount * laneHeight;
+const int playerCardCount = 3;
+const float cardFirstX = -0.48f;
+const float cardSpacing = 0.28f;
+const float cardY = 0.82f;
+const float cardWidth = 0.23f;
+const float cardHeight = 0.30f;
+const PlayerType cardTypes[] = {
     PlayerType::TempleWarrior, PlayerType::RoyalArcher, PlayerType::ShieldGuardian
 };
 // The brief's starting balance buys three melee units; written cost ratios are 2x/3x.
-constexpr int meleePurchaseCost = 10;
-constexpr int cardCosts[playerCardCount] = {meleePurchaseCost, 2 * meleePurchaseCost, 3 * meleePurchaseCost};
-constexpr int collectibleValue = 10; // Balance setting: the brief gives no drop value.
+const int meleePurchaseCost = 10;
+const int cardCosts[playerCardCount] = {meleePurchaseCost, 2 * meleePurchaseCost, 3 * meleePurchaseCost};
+const int collectibleValue = 10; // Balance setting: the brief gives no drop value.
 
 // Durations are in seconds.
-constexpr float jumpDuration = 0.65f;
-constexpr float jumpHeight = 0.06f;
-constexpr float duckDuration = 0.65f;
-constexpr float duckHeightScale = 0.55f;
-constexpr float archerAttackInterval = 0.9f;
-constexpr float encounterDistance = 0.16f;
-constexpr float meleeAttackInterval = 0.8f; // Seconds per swing; a tuning value.
-constexpr float bruteAttackInterval = 1.1f; // Heavy axe swings have a longer windup.
+const float jumpDuration = 0.65f;
+const float jumpHeight = 0.06f;
+const float duckDuration = 0.65f;
+const float duckHeightScale = 0.55f;
+const float archerAttackInterval = 0.9f;
+const float encounterDistance = 0.16f;
+const float meleeAttackInterval = 0.8f; // Seconds per swing; a tuning value.
+const float bruteAttackInterval = 1.1f; // Heavy axe swings have a longer windup.
 
 
 // 3. Game states and necessary drawing declarations
@@ -162,7 +163,7 @@ enum class GameState {
     SoundSettings
 };
 
-constexpr int circleSegments = 48;
+const int circleSegments = 48;
 
 // These shapes and numbers are used before their definitions below.
 
@@ -176,7 +177,7 @@ void drawNumber(int number, float originX, float originY, float size, bool cente
 
 // 4. Cutscene timeline
 
-constexpr float cutsceneDuration = 18.0f;
+const float cutsceneDuration = 18.0f;
 
 float cutsceneProgress(float time, float start, float end) {
     return std::clamp((time - start) / (end - start), 0.0f, 1.0f);
@@ -248,7 +249,7 @@ CutscenePose getCutscenePose(float time) {
 
 // A small hand-defined 5x7 alphabet. Each row uses five bits, left to right.
 const unsigned char* getLetterPattern(char letter) {
-    static constexpr unsigned char alphabet[26][7] = {
+    static const unsigned char alphabet[26][7] = {
         {14,17,17,31,17,17,17}, // A
         {30,17,17,30,17,17,30}, // B
         {14,17,16,16,16,17,14}, // C
@@ -277,6 +278,10 @@ const unsigned char* getLetterPattern(char letter) {
         {31,1,2,4,8,16,31}     // Z
     };
     return letter >= 'A' && letter <= 'Z' ? alphabet[letter - 'A'] : nullptr;
+}
+
+float laneCenterY(int lane) {
+    return fieldTop - (lane + 0.5f) * laneHeight;
 }
 
 bool mouseToGamePosition(double mouseX, double mouseY, int width, int height, glm::vec2& position) {
@@ -324,7 +329,6 @@ float cutsceneTime = 0.0f;
 float worldAnimationTime = 0.0f;
 bool selectedLanes[laneCount] = {};
 int selectedCard = -1;
-bool cardAvailable[playerCardCount] = {true, false, false};
 bool hasCollectedCoins = false;
 int coins = 30;
 std::vector<Player> players;
@@ -335,26 +339,24 @@ std::vector<Projectile> arrows;
 std::vector<Projectile> highProjectiles;
 std::vector<Projectile> lowProjectiles;
 
-void refreshCardAvailability() {
-    for (int card = 0; card < playerCardCount; ++card) {
-        // The current economy interpretation enables advanced cards after the first pickup.
-        cardAvailable[card] = (card == 0 || hasCollectedCoins) &&
-                              coins >= cardCosts[card];
-    }
-    if (selectedCard >= 0 && !cardAvailable[selectedCard]) selectedCard = -1;
+bool isCardAvailable(int card) {
+    return card >= 0 && card < playerCardCount &&
+           (card == 0 || hasCollectedCoins) && coins >= cardCosts[card];
+}
+
+void clearUnavailableSelection() {
+    if (selectedCard >= 0 && !isCardAvailable(selectedCard)) selectedCard = -1;
 }
 
 bool purchaseGuardian(int card, int lane) {
     if (gameState != GameState::Playing || card < 0 || card >= playerCardCount ||
         lane < 0 || lane >= laneCount) return false;
-    refreshCardAvailability();
-    if (!cardAvailable[card]) return false;
-    float startY = fieldTop - (lane + 0.5f) * laneHeight;
+    if (!isCardAvailable(card)) return false;
+    float startY = laneCenterY(lane);
     players.emplace_back(cardTypes[card], lane, fieldLeft + 0.07f, startY);
     coins -= cardCosts[card];
     selectedLanes[lane] = true;
     selectedCard = -1;
-    refreshCardAvailability();
     return true;
 }
 
@@ -364,50 +366,40 @@ static bool canPlayerEvade(const Player& player) {
            player.action != CharacterAction::Jumping && player.action != CharacterAction::Ducking;
 }
 
-void startJump() {
+void startEvasion(CharacterAction action) {
     for (Player& player : players) {
         if (!canPlayerEvade(player)) continue;
-        player.action = CharacterAction::Jumping;
-        player.jumpTimer = 0.0f;
+        player.action = action;
+        float& timer = action == CharacterAction::Jumping ? player.jumpTimer : player.duckTimer;
+        timer = 0.0f;
+    }
+}
+
+void startJump() { startEvasion(CharacterAction::Jumping); }
+void startDuck() { startEvasion(CharacterAction::Ducking); }
+
+void updateEvasion(CharacterAction action, float duration, float deltaTime) {
+    for (Player& player : players) {
+        if (player.action != action) continue;
+        if (player.health <= 0) {
+            player.action = CharacterAction::Defeated;
+            continue;
+        }
+        float& timer = action == CharacterAction::Jumping ? player.jumpTimer : player.duckTimer;
+        timer += deltaTime;
+        if (timer >= duration) {
+            timer = 0.0f;
+            player.action = CharacterAction::Walking;
+        }
     }
 }
 
 void updateJumps(float deltaTime) {
-    for (Player& player : players) {
-        if (player.action != CharacterAction::Jumping) continue;
-        if (player.health <= 0) {
-            player.action = CharacterAction::Defeated;
-            continue;
-        }
-        player.jumpTimer += deltaTime;
-        if (player.jumpTimer >= jumpDuration) {
-            player.jumpTimer = 0.0f;
-            player.action = CharacterAction::Walking;
-        }
-    }
-}
-
-void startDuck() {
-    for (Player& player : players) {
-        if (!canPlayerEvade(player)) continue;
-        player.action = CharacterAction::Ducking;
-        player.duckTimer = 0.0f;
-    }
+    updateEvasion(CharacterAction::Jumping, jumpDuration, deltaTime);
 }
 
 void updateDucks(float deltaTime) {
-    for (Player& player : players) {
-        if (player.action != CharacterAction::Ducking) continue;
-        if (player.health <= 0) {
-            player.action = CharacterAction::Defeated;
-            continue;
-        }
-        player.duckTimer += deltaTime;
-        if (player.duckTimer >= duckDuration) {
-            player.duckTimer = 0.0f;
-            player.action = CharacterAction::Walking;
-        }
-    }
+    updateEvasion(CharacterAction::Ducking, duckDuration, deltaTime);
 }
 
 float getJumpHeight(const Player& player) {
@@ -450,15 +442,22 @@ void resetGame() {
     hasCollectedCoins = false;
     selectedCard = -1;
     std::fill(std::begin(selectedLanes), std::end(selectedLanes), false);
-    refreshCardAvailability();
+}
+
+void startNewGame(GameState initialState = GameState::Playing) {
+    resetGame();
+    gameState = initialState;
+}
+
+void returnToMainMenu() {
+    resetGame();
+    gameState = GameState::MainMenu;
 }
 
 void updateCutscene(float deltaTime) {
-    if (gameState != GameState::Cutscene) return;
     cutsceneTime += deltaTime;
     if (cutsceneTime >= cutsceneDuration) {
-        resetGame();
-        gameState = GameState::Playing;
+        startNewGame();
     }
 }
 
@@ -538,9 +537,8 @@ static void updateEnemyProjectiles(std::vector<Projectile>& shots,
         projectile.x = nextX;
         if (projectile.x < fieldLeft - 0.2f) projectile.active = false;
     }
-    for (int index = static_cast<int>(shots.size()) - 1; index >= 0; --index) {
-        if (!shots[index].active) shots.erase(shots.begin() + index);
-    }
+    shots.erase(std::remove_if(shots.begin(), shots.end(),
+        [](const Projectile& projectile) { return !projectile.active; }), shots.end());
 }
 
 
@@ -611,9 +609,8 @@ void updateArrows(float deltaTime) {
         arrow.x = nextX;
         if (arrow.x > fieldRight + 0.2f) arrow.active = false;
     }
-    for (int index = static_cast<int>(arrows.size()) - 1; index >= 0; --index) {
-        if (!arrows[index].active) arrows.erase(arrows.begin() + index);
-    }
+    arrows.erase(std::remove_if(arrows.begin(), arrows.end(),
+        [](const Projectile& arrow) { return !arrow.active; }), arrows.end());
 }
 
 void updateMeleeCombat(float deltaTime) {
@@ -698,10 +695,9 @@ void updateCollectibles() {
             break; // Overlapping guardians cannot collect the same token twice.
         }
     }
-    for (int index = static_cast<int>(collectibles.size()) - 1; index >= 0; --index) {
-        if (collectibles[index].collected) collectibles.erase(collectibles.begin() + index);
-    }
-    refreshCardAvailability();
+    collectibles.erase(std::remove_if(collectibles.begin(), collectibles.end(),
+        [](const Collectible& collectible) { return collectible.collected; }), collectibles.end());
+    clearUnavailableSelection();
 }
 
 void removeDefeatedCharacters() {
@@ -711,12 +707,10 @@ void removeDefeatedCharacters() {
         if (enemy.health <= 0)
             collectibles.push_back({enemy.lane, enemy.x, enemy.y});
     }
-    for (int index = static_cast<int>(players.size()) - 1; index >= 0; --index) {
-        if (players[index].health <= 0) players.erase(players.begin() + index);
-    }
-    for (int index = static_cast<int>(enemies.size()) - 1; index >= 0; --index) {
-        if (enemies[index].health <= 0) enemies.erase(enemies.begin() + index);
-    }
+    players.erase(std::remove_if(players.begin(), players.end(),
+        [](const Player& player) { return player.health <= 0; }), players.end());
+    enemies.erase(std::remove_if(enemies.begin(), enemies.end(),
+        [](const Enemy& enemy) { return enemy.health <= 0; }), enemies.end());
 }
 
 void updateCombatStates() {
@@ -826,7 +820,7 @@ void updateWaves(std::mt19937& randomGenerator, float deltaTime) {
             type = types[wave.enemiesSpawned % 3];
         }
         int lane = randomLane(randomGenerator);
-        float y = fieldTop - (lane + 0.5f) * laneHeight;
+        float y = laneCenterY(lane);
         enemies.emplace_back(type, lane, fieldRight, y);
         ++wave.enemiesSpawned;
     }
@@ -892,23 +886,20 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     }
 
     if (key == GLFW_KEY_M) {
-        resetGame();
-        gameState = GameState::MainMenu;
+        returnToMainMenu();
         return;
     }
 
     switch (gameState) {
     case GameState::MainMenu:
         if (key == GLFW_KEY_ENTER) {
-            resetGame();
-            gameState = GameState::Cutscene;
+            startNewGame(GameState::Cutscene);
         }
         if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(window, true);
         break;
     case GameState::Cutscene:
         if (key == GLFW_KEY_ENTER || key == GLFW_KEY_SPACE) {
-            resetGame();
-            gameState = GameState::Playing;
+            startNewGame();
         }
         break;
     case GameState::Playing:
@@ -923,8 +914,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     case GameState::Victory:
     case GameState::Defeat:
         if (key == GLFW_KEY_ENTER) {
-            resetGame();
-            gameState = GameState::Playing;
+            startNewGame();
         }
         break;
     case GameState::SoundSettings:
@@ -987,26 +977,22 @@ void activatePauseMenuButton(int button) {
         return;
     }
     if (button == 1) {
-        resetGame();
-        gameState = GameState::Playing;
+        startNewGame();
         return;
     }
     if (button == 2) {
-        resetGame();
-        gameState = GameState::MainMenu;
+        returnToMainMenu();
     }
 }
 
 void activateResultMenuButton(int button) {
     if (gameState != GameState::Victory && gameState != GameState::Defeat) return;
     if (button == 0) {
-        resetGame();
-        gameState = GameState::Playing;
+        startNewGame();
         return;
     }
     if (button == 1) {
-        resetGame();
-        gameState = GameState::MainMenu;
+        returnToMainMenu();
     }
 }
 
@@ -1040,8 +1026,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         int menuButton = mainMenuButtonAtPosition(position);
         if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
         if (menuButton == 0) {
-            resetGame();
-            gameState = GameState::Cutscene;
+            startNewGame(GameState::Cutscene);
         } else if (menuButton == 1) {
             gameState = GameState::SoundSettings;
         } else if (menuButton == 2) {
@@ -1070,10 +1055,9 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (gameState != GameState::Playing) return;
     int card = cardAtPosition(position);
     if (card != -1) {
-        if (cardAvailable[card]) {
-            selectedCard = card;
-            audio::playEffect(SoundEffect::CardSelect);
-        }
+        if (!isCardAvailable(card)) return;
+        selectedCard = card;
+        audio::playEffect(SoundEffect::CardSelect);
         return; // Card clicks must not change lane selection.
     }
     int lane = laneAtPosition(position);
@@ -1328,8 +1312,7 @@ void drawCircle(float x, float y, float diameter, glm::vec3 color) {
 
 void drawText(const char* text, float centerX, float centerY, float pixelSize,
               glm::vec3 color) {
-    int length = 0;
-    while (text[length] != '\0') ++length;
+    int length = static_cast<int>(std::strlen(text));
     float left = centerX - (length * 6 - 1) * pixelSize * 0.5f;
     for (int letter = 0; letter < length; ++letter) {
         const unsigned char* rows = getLetterPattern(text[letter]);
@@ -1355,8 +1338,7 @@ void drawMenuButton(const char* label, float x, float y, float width, bool hover
     drawRectangle(x, y, width - 0.025f, menuButtonHeight - 0.025f,
                   0.0f, fill.r, fill.g, fill.b);
     // Long labels shrink to fit inside the button; shorter ones keep the usual size.
-    int length = 0;
-    while (label[length] != '\0') ++length;
+    int length = static_cast<int>(std::strlen(label));
     float textSize = 0.011f;
     float textWidth = (length * 6 - 1) * textSize;
     float maxWidth = width - 0.07f;
@@ -1550,13 +1532,21 @@ void drawShieldGuardian(const Player& player, float scale = 1.0f) {
     }
 }
 
+void drawPlayer(const Player& player, float scale = 1.0f, float walkPhase = 0.0f) {
+    switch (player.type) {
+    case PlayerType::TempleWarrior: drawTempleWarrior(player, scale, walkPhase); break;
+    case PlayerType::RoyalArcher: drawRoyalArcher(player, scale, walkPhase); break;
+    case PlayerType::ShieldGuardian: drawShieldGuardian(player, scale); break;
+    }
+}
+
 void drawPlayerCards(int hoveredCard) {
     const char* names[] = {"WARRIOR", "ARCHER", "SHIELD"};
     const glm::vec3 accents[] = {
         {0.85f, 0.48f, 0.23f}, {0.28f, 0.65f, 0.61f}, {0.49f, 0.52f, 0.78f}
     };
     for (int card = 0; card < playerCardCount; ++card) {
-        bool available = cardAvailable[card];
+        bool available = isCardAvailable(card);
         bool selected = available && selectedCard == card;
         bool hovered = available && hoveredCard == card;
         glUniform1i(grayscaleLocation, available ? GL_FALSE : GL_TRUE);
@@ -1579,17 +1569,7 @@ void drawPlayerCards(int hoveredCard) {
         drawText(names[card],
                  x, cardY + 0.122f, 0.0048f, glm::vec3(1.0f, 0.91f, 0.7f));
         Player portrait(cardTypes[card], 0, x - 0.02f, cardY - 0.007f);
-        switch (portrait.type) {
-        case PlayerType::TempleWarrior:
-            drawTempleWarrior(portrait, 0.66f);
-            break;
-        case PlayerType::RoyalArcher:
-            drawRoyalArcher(portrait, 0.66f);
-            break;
-        case PlayerType::ShieldGuardian:
-            drawShieldGuardian(portrait, 0.66f);
-            break;
-        }
+        drawPlayer(portrait, 0.66f);
         drawRectangle(x, cardY - 0.115f, 0.114f, 0.052f, 0,
                       border.r, border.g, border.b);
         drawRectangle(x, cardY - 0.115f, 0.108f, 0.046f, 0, 0.10f, 0.12f, 0.14f);
@@ -1770,8 +1750,7 @@ void drawNumber(int number, float originX, float originY, float size, bool cente
     const float segmentY[] = {0.05f, 0.025f, -0.025f, -0.05f, -0.025f, 0.025f, 0.0f};
     char digits[16];
     std::snprintf(digits, sizeof(digits), "%d", number);
-    int digitCount = 0;
-    while (digits[digitCount] != '\0') ++digitCount;
+    int digitCount = static_cast<int>(std::strlen(digits));
     // Fit longer balances into the same panel rather than overflowing it.
     float scale = size * (digitCount > 4 ? 4.0f / digitCount : 1.0f);
     if (centered) {
@@ -1858,19 +1837,20 @@ void drawLowProjectile(const Projectile& projectile) {
                   1.0f, 0.92f, 0.55f);
 }
 
-void setDamageTint(int health, int maxHealth) {
-    float remaining = maxHealth > 0
+float healthFraction(int health, int maxHealth) {
+    return maxHealth > 0
         ? glm::clamp(static_cast<float>(health) / maxHealth, 0.0f, 1.0f)
         : 0.0f;
-    glUniform1f(damageLocation, 1.0f - remaining);
+}
+
+void setDamageTint(int health, int maxHealth) {
+    glUniform1f(damageLocation, 1.0f - healthFraction(health, maxHealth));
 }
 
 void drawHealthBar(float x, float y, int health, int maxHealth) {
     const float width = 0.17f;
     const float height = 0.018f;
-    float fraction = maxHealth > 0
-        ? glm::clamp(static_cast<float>(health) / maxHealth, 0.0f, 1.0f)
-        : 0.0f;
+    float fraction = healthFraction(health, maxHealth);
 
     drawRectangle(x, y, width + 0.008f, height + 0.008f, 0.0f,
                   0.08f, 0.06f, 0.05f);
@@ -1893,20 +1873,16 @@ void drawHealthBar(float x, float y, int health, int maxHealth) {
 
 bool shouldShowPlacementPreview(int lane) {
     return gameState == GameState::Playing && lane >= 0 && lane < laneCount &&
-           selectedCard >= 0 && selectedCard < playerCardCount && cardAvailable[selectedCard];
+           selectedCard >= 0 && selectedCard < playerCardCount && isCardAvailable(selectedCard);
 }
 
 void drawPlacementPreview(int lane) {
     if (!shouldShowPlacementPreview(lane)) return;
     Player ghost(cardTypes[selectedCard], lane, fieldLeft + 0.07f,
-                 fieldTop - (lane + 0.5f) * laneHeight);
+                 laneCenterY(lane));
     ghost.action = CharacterAction::Idle;
     drawingOpacity = 0.5f;
-    switch (ghost.type) {
-    case PlayerType::TempleWarrior: drawTempleWarrior(ghost); break;
-    case PlayerType::RoyalArcher: drawRoyalArcher(ghost); break;
-    case PlayerType::ShieldGuardian: drawShieldGuardian(ghost); break;
-    }
+    drawPlayer(ghost);
     drawingOpacity = 1.0f;
 }
 
@@ -2079,7 +2055,7 @@ void drawPlayfield(int hoveredLane) {
                   0.35f, 0.24f, 0.13f);
 
     for (int lane = 0; lane < laneCount; ++lane) {
-        float y = fieldTop - (lane + 0.5f) * laneHeight;
+        float y = laneCenterY(lane);
         float shade = (lane % 2 == 0) ? 0.0f : 0.05f;
         glm::vec3 color(0.74f + shade, 0.57f + shade, 0.34f + shade);
         if (selectedLanes[lane])
@@ -2137,9 +2113,6 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
         drawCutscene();
         return;
     }
-    if (gameState != GameState::Playing && gameState != GameState::Paused &&
-        gameState != GameState::Victory && gameState != GameState::Defeat) return;
-
     drawPlayfield(hoveredLane);
     for (const Collectible& collectible : collectibles) {
         drawGoldenScarab(collectible.x, collectible.y - 0.075f, 0.65f);
@@ -2161,19 +2134,8 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
         float heightScale = player.action == CharacterAction::Ducking ? duckHeightScale : 1.0f;
         // Lower the compressed pose to keep its feet near the lane baseline.
         pose.y -= 0.12f * (1.0f - heightScale);
-        switch (player.type) {
-        case PlayerType::TempleWarrior:
-            drawTempleWarrior(pose, 1.0f,
-                              player.action == CharacterAction::Walking ? player.walkPhase : 0.0f);
-            break;
-        case PlayerType::RoyalArcher:
-            drawRoyalArcher(pose, 1.0f,
-                            player.action == CharacterAction::Walking ? player.walkPhase : 0.0f);
-            break;
-        case PlayerType::ShieldGuardian:
-            drawShieldGuardian(pose);
-            break;
-        }
+        drawPlayer(pose, 1.0f,
+                   player.action == CharacterAction::Walking ? player.walkPhase : 0.0f);
         glUniform1f(damageLocation, 0.0f);
         healthLabels.push_back({glm::vec2(pose.x, pose.y + 0.17f * heightScale),
                                 player.health, player.maxHealth});

@@ -17,7 +17,7 @@ enum class ResultSound {
 
 namespace audio {
 
-constexpr int volumeStep = 10; // Percent per volume up/down press.
+const int volumeStep = 10; // Percent per volume up/down press.
 
 bool initialize();   // Returns false if no audio is available; the game still runs.
 void shutdown();
