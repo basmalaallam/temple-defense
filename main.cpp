@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "audio.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -112,6 +113,8 @@ constexpr float menuCenterX = 0.1f;
 constexpr float menuButtonWidth = 0.64f;
 constexpr float menuButtonHeight = 0.17f;
 constexpr float menuButtonY[] = {0.0f, -0.26f};
+constexpr float mainMenuButtonY[] = {0.06f, -0.18f, -0.42f};
+constexpr float soundButtonY[] = {0.16f, -0.07f, -0.30f, -0.53f};
 constexpr float pauseButtonY[] = {0.18f, -0.08f, -0.34f};
 constexpr float pauseButtonWidth = 0.72f;
 
@@ -155,7 +158,8 @@ enum class GameState {
     Playing,
     Paused,
     Victory,
-    Defeat
+    Defeat,
+    SoundSettings
 };
 
 constexpr int circleSegments = 48;
@@ -870,7 +874,22 @@ void updateGame(float deltaTime, std::mt19937& randomGenerator) {
 // 7. Keyboard, mouse, and menu input
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action != GLFW_PRESS) return;
+    if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+
+    // Volume keys work on every screen. '+' is Shift+'=' on most keyboards.
+    if (key == GLFW_KEY_EQUAL || key == GLFW_KEY_KP_ADD) {
+        audio::volumeUp();
+        return;
+    }
+    if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+        audio::volumeDown();
+        return;
+    }
+    if (action != GLFW_PRESS) return; // Only volume keys repeat when held.
+    if (key == GLFW_KEY_N) {
+        audio::toggleMute();
+        return;
+    }
 
     if (key == GLFW_KEY_M) {
         resetGame();
@@ -908,6 +927,10 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
             gameState = GameState::Playing;
         }
         break;
+    case GameState::SoundSettings:
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER)
+            gameState = GameState::MainMenu;
+        break;
     }
 }
 
@@ -934,7 +957,19 @@ int menuButtonAtPosition(const glm::vec2& position, float centerX, float width,
 }
 
 int mainMenuButtonAtPosition(const glm::vec2& position) {
-    return menuButtonAtPosition(position, menuCenterX, menuButtonWidth, menuButtonY, 2);
+    return menuButtonAtPosition(position, menuCenterX, menuButtonWidth, mainMenuButtonY, 3);
+}
+
+int soundMenuButtonAtPosition(const glm::vec2& position) {
+    return menuButtonAtPosition(position, 0.0f, pauseButtonWidth, soundButtonY, 4);
+}
+
+void activateSoundMenuButton(int button) {
+    if (gameState != GameState::SoundSettings) return;
+    if (button == 0) audio::volumeUp();
+    if (button == 1) audio::volumeDown();
+    if (button == 2) audio::toggleMute();
+    if (button == 3) gameState = GameState::MainMenu;
 }
 
 int pauseMenuButtonAtPosition(const glm::vec2& position) {
@@ -1003,36 +1038,54 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (!getMousePosition(window, position)) return;
     if (gameState == GameState::MainMenu) {
         int menuButton = mainMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
         if (menuButton == 0) {
             resetGame();
             gameState = GameState::Cutscene;
         } else if (menuButton == 1) {
+            gameState = GameState::SoundSettings;
+        } else if (menuButton == 2) {
             glfwSetWindowShouldClose(window, true);
         }
         return;
     }
+    if (gameState == GameState::SoundSettings) {
+        int menuButton = soundMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
+        activateSoundMenuButton(menuButton);
+        return;
+    }
     if (gameState == GameState::Paused) {
-        activatePauseMenuButton(pauseMenuButtonAtPosition(position));
+        int menuButton = pauseMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
+        activatePauseMenuButton(menuButton);
         return;
     }
     if (gameState == GameState::Victory || gameState == GameState::Defeat) {
-        activateResultMenuButton(resultMenuButtonAtPosition(position));
+        int menuButton = resultMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
+        activateResultMenuButton(menuButton);
         return;
     }
     if (gameState != GameState::Playing) return;
     int card = cardAtPosition(position);
     if (card != -1) {
-        if (cardAvailable[card]) selectedCard = card;
+        if (cardAvailable[card]) {
+            selectedCard = card;
+            audio::playEffect(SoundEffect::CardSelect);
+        }
         return; // Card clicks must not change lane selection.
     }
     int lane = laneAtPosition(position);
     if (lane == -1) return;
 
     if (selectedCard != -1) {
-        purchaseGuardian(selectedCard, lane);
+        if (purchaseGuardian(selectedCard, lane))
+            audio::playEffect(SoundEffect::GuardianPlaced);
         return;
     }
     selectedLanes[lane] = !selectedLanes[lane];
+    audio::playEffect(SoundEffect::LaneSelect);
 }
 
 
@@ -1301,7 +1354,14 @@ void drawMenuButton(const char* label, float x, float y, float width, bool hover
     drawRectangle(x, y, width, menuButtonHeight, 0.0f, border.r, border.g, border.b);
     drawRectangle(x, y, width - 0.025f, menuButtonHeight - 0.025f,
                   0.0f, fill.r, fill.g, fill.b);
-    drawText(label, x, y, 0.011f, glm::vec3(1.0f, 0.93f, 0.72f));
+    // Long labels shrink to fit inside the button; shorter ones keep the usual size.
+    int length = 0;
+    while (label[length] != '\0') ++length;
+    float textSize = 0.011f;
+    float textWidth = (length * 6 - 1) * textSize;
+    float maxWidth = width - 0.07f;
+    if (textWidth > maxWidth) textSize *= maxWidth / textWidth;
+    drawText(label, x, y, textSize, glm::vec3(1.0f, 0.93f, 0.72f));
 }
 
 // Parts are positioned relative to the character currently being drawn.
@@ -1937,11 +1997,50 @@ void drawMainMenu(int hoveredButton) {
     drawText("GUARDIANS OF", menuCenterX, 0.62f, 0.016f, glm::vec3(1.0f, 0.83f, 0.35f));
     drawText("THE SACRED SUN", menuCenterX, 0.45f, 0.014f, glm::vec3(1.0f, 0.83f, 0.35f));
     drawText("EGYPTIAN TEMPLE DEFENSE", menuCenterX, 0.28f, 0.007f, glm::vec3(0.85f, 0.8f, 0.67f));
-    const char* labels[] = {"START", "EXIT"};
-    for (int button = 0; button < 2; ++button) {
+    const char* labels[] = {"START", "SOUND SETTINGS", "EXIT"};
+    for (int button = 0; button < 3; ++button) {
         drawMenuButton(labels[button],
-                       menuCenterX, menuButtonY[button], menuButtonWidth, hoveredButton == button);
+                       menuCenterX, mainMenuButtonY[button], menuButtonWidth, hoveredButton == button);
     }
+}
+
+// The letter font has no percent sign, so it is built from two dots and a slash.
+void drawPercentSign(float x, float y, float size, glm::vec3 color) {
+    drawRectangle(x, y, size * 0.9f, size * 7.0f, -0.6f, color.r, color.g, color.b);
+    drawRectangle(x - size * 1.8f, y + size * 2.3f, size * 1.6f, size * 1.6f, 0.0f,
+                  color.r, color.g, color.b);
+    drawRectangle(x + size * 1.8f, y - size * 2.3f, size * 1.6f, size * 1.6f, 0.0f,
+                  color.r, color.g, color.b);
+}
+
+// Draws "VOLUME 70%" (or "MUTED 70%") centered on x.
+void drawVolumeReadout(float x, float y, float size, glm::vec3 color) {
+    int percent = audio::volumePercent();
+    const char* label = audio::isMuted() ? "MUTED" : "VOLUME";
+    int labelLength = audio::isMuted() ? 5 : 6;
+    int digits = percent >= 100 ? 3 : (percent >= 10 ? 2 : 1);
+    // Letters are 7 text pixels tall; this digit scale gives digits the same height.
+    float numberScale = size * 65.0f;
+    float labelWidth = labelLength * 6 * size;
+    float numberWidth = digits * 0.09f * numberScale;
+    float total = labelWidth + size * 4 + numberWidth + size * 6;
+    float left = x - total * 0.5f;
+    drawText(label, left + labelWidth * 0.5f, y, size, color);
+    float numberLeft = left + labelWidth + size * 4;
+    drawNumber(percent, numberLeft + numberWidth * 0.5f, y, numberScale, true);
+    drawPercentSign(numberLeft + numberWidth + size * 3.5f, y, size, color);
+}
+
+void drawSoundMenu(int hoveredButton) {
+    drawRectangle(0.0f, -0.05f, 1.08f, 1.5f, 0.0f, 0.69f, 0.51f, 0.24f);
+    drawRectangle(0.0f, -0.05f, 1.04f, 1.46f, 0.0f, 0.08f, 0.1f, 0.16f);
+    drawText("SOUND SETTINGS", 0.0f, 0.55f, 0.0105f, glm::vec3(1.0f, 0.83f, 0.35f));
+    drawVolumeReadout(0.0f, 0.37f, 0.011f, audio::isMuted()
+        ? glm::vec3(0.86f, 0.45f, 0.35f) : glm::vec3(0.95f, 0.91f, 0.8f));
+    const char* labels[] = {"VOLUME UP", "VOLUME DOWN", audio::isMuted() ? "UNMUTE" : "MUTE", "BACK"};
+    for (int button = 0; button < 4; ++button)
+        drawMenuButton(labels[button],
+                       0.0f, soundButtonY[button], pauseButtonWidth, hoveredButton == button);
 }
 
 void drawPauseMenu(int hoveredButton) {
@@ -2023,6 +2122,15 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
     if (gameState == GameState::MainMenu) {
         int hoveredButton = mouseInside ? mainMenuButtonAtPosition(mousePosition) : -1;
         drawMainMenu(hoveredButton);
+        drawText("PLUS MINUS VOLUME   N MUTE", menuCenterX, -0.62f, 0.0045f,
+                 glm::vec3(0.8f, 0.8f, 0.75f));
+        drawVolumeReadout(menuCenterX, -0.70f, 0.0045f, glm::vec3(0.8f, 0.8f, 0.75f));
+        return;
+    }
+    if (gameState == GameState::SoundSettings) {
+        drawTemple();
+        int hoveredButton = mouseInside ? soundMenuButtonAtPosition(mousePosition) : -1;
+        drawSoundMenu(hoveredButton);
         return;
     }
     if (gameState == GameState::Cutscene) {
@@ -2120,6 +2228,22 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
         int hoveredButton = mouseInside ? resultMenuButtonAtPosition(mousePosition) : -1;
         drawResultMenu(hoveredButton);
     }
+    drawVolumeReadout(0.72f, -0.93f, 0.0045f, glm::vec3(0.9f, 0.88f, 0.8f));
+}
+
+// Music and result sounds follow the game state. Reacting to the change of state
+// here plays each victory or game over sound once, when that screen opens.
+void updateAudioForState(GameState previous, GameState current) {
+    if (previous == current) return;
+    bool result = current == GameState::Victory || current == GameState::Defeat;
+    if (result) {
+        audio::pauseMusic();
+        audio::playResult(current == GameState::Victory
+            ? ResultSound::Victory : ResultSound::GameOver);
+        return;
+    }
+    audio::stopResults();
+    audio::playMusic();
 }
 
 
@@ -2219,6 +2343,9 @@ int main() {
     glBindVertexArray(0);
 
     initializeDrawing(VAO, shaderProgram);
+    audio::initialize(); // Without a sound device the game simply runs silently.
+    audio::playMusic();
+    GameState audioState = gameState;
     std::mt19937 randomGenerator(std::random_device{}());
     double lastFrameTime = glfwGetTime();
 
@@ -2244,9 +2371,13 @@ int main() {
         glm::vec2 mousePosition;
         bool mouseInside = getMousePosition(window, mousePosition);
         drawFrame(mousePosition, mouseInside);
+        updateAudioForState(audioState, gameState);
+        audioState = gameState;
 
         glfwSwapBuffers(window);
     }
+
+    audio::shutdown();
 
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);

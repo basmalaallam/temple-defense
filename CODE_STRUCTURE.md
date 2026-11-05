@@ -34,3 +34,13 @@ not depend on the original sample triangle appearing on screen. The rectangle,
 triangle, and circle geometry now serve the actual game graphics.
 
 This consolidation changes where the code is stored, rather than the game rules.
+
+## Sound
+
+Audio lives in `audio.h` / `audio.cpp` (miniaudio, `external/miniaudio/miniaudio.h`).
+`main.cpp` only calls `audio::...` functions: effects on clicks, lane selection, card
+selection and placement, and `updateAudioForState` in the main loop, which pauses the
+music and plays the victory or game over sound once when that screen opens. Sound files
+are in `assets/sounds/`; CMake copies them next to the executable after every build.
+Keys: `+` / `-` change the volume by 10%, `N` mutes or unmutes. The main menu's
+Sound Settings screen changes the same setting.
