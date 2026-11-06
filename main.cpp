@@ -5,11 +5,15 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "audio.h"
+#include "external/stb/stb_easy_font.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <random>
+#include <string>
 #include <vector>
 
 
@@ -99,8 +103,8 @@ struct Enemy {
 
 // 2. Wave data and game settings
 
-constexpr int waveCount = 3;
-constexpr int waveEnemyCounts[waveCount] = {3, 5, 10};
+const int waveCount = 3;
+const int waveEnemyCounts[waveCount] = {3, 5, 10};
 
 struct WaveProgress {
     int waveIndex = 0; // Zero-based; waveCount means all waves are cleared.
@@ -108,43 +112,45 @@ struct WaveProgress {
     float spawnTimer = 0.0f;
 };
 
-constexpr float menuCenterX = 0.1f;
-constexpr float menuButtonWidth = 0.64f;
-constexpr float menuButtonHeight = 0.17f;
-constexpr float menuButtonY[] = {0.0f, -0.26f};
-constexpr float pauseButtonY[] = {0.18f, -0.08f, -0.34f};
-constexpr float pauseButtonWidth = 0.72f;
+const float menuCenterX = 0.1f;
+const float menuButtonWidth = 0.64f;
+const float menuButtonHeight = 0.17f;
+const float menuButtonY[] = {0.0f, -0.26f};
+const float mainMenuButtonY[] = {0.06f, -0.18f, -0.42f};
+const float soundButtonY[] = {0.16f, -0.07f, -0.30f, -0.53f};
+const float pauseButtonY[] = {0.18f, -0.08f, -0.34f};
+const float pauseButtonWidth = 0.72f;
 
 // Drawing and click detection must use these same boundaries.
-constexpr int laneCount = 4;
-constexpr float fieldLeft = -0.65f;
-constexpr float fieldRight = 0.85f;
-constexpr float fieldTop = 0.55f;
-constexpr float laneHeight = 0.3f;
-constexpr float fieldBottom = fieldTop - laneCount * laneHeight;
-constexpr int playerCardCount = 3;
-constexpr float cardFirstX = -0.48f;
-constexpr float cardSpacing = 0.28f;
-constexpr float cardY = 0.82f;
-constexpr float cardWidth = 0.23f;
-constexpr float cardHeight = 0.30f;
-constexpr PlayerType cardTypes[] = {
+const int laneCount = 4;
+const float fieldLeft = -0.65f;
+const float fieldRight = 0.85f;
+const float fieldTop = 0.55f;
+const float laneHeight = 0.3f;
+const float fieldBottom = fieldTop - laneCount * laneHeight;
+const int playerCardCount = 3;
+const float cardFirstX = -0.48f;
+const float cardSpacing = 0.28f;
+const float cardY = 0.82f;
+const float cardWidth = 0.23f;
+const float cardHeight = 0.30f;
+const PlayerType cardTypes[] = {
     PlayerType::TempleWarrior, PlayerType::RoyalArcher, PlayerType::ShieldGuardian
 };
 // The brief's starting balance buys three melee units; written cost ratios are 2x/3x.
-constexpr int meleePurchaseCost = 10;
-constexpr int cardCosts[playerCardCount] = {meleePurchaseCost, 2 * meleePurchaseCost, 3 * meleePurchaseCost};
-constexpr int collectibleValue = 10; // Balance setting: the brief gives no drop value.
+const int meleePurchaseCost = 10;
+const int cardCosts[playerCardCount] = {meleePurchaseCost, 2 * meleePurchaseCost, 3 * meleePurchaseCost};
+const int collectibleValue = 10; // Balance setting: the brief gives no drop value.
 
 // Durations are in seconds.
-constexpr float jumpDuration = 0.65f;
-constexpr float jumpHeight = 0.06f;
-constexpr float duckDuration = 0.65f;
-constexpr float duckHeightScale = 0.55f;
-constexpr float archerAttackInterval = 0.9f;
-constexpr float encounterDistance = 0.16f;
-constexpr float meleeAttackInterval = 0.8f; // Seconds per swing; a tuning value.
-constexpr float bruteAttackInterval = 1.1f; // Heavy axe swings have a longer windup.
+const float jumpDuration = 0.65f;
+const float jumpHeight = 0.06f;
+const float duckDuration = 0.65f;
+const float duckHeightScale = 0.55f;
+const float archerAttackInterval = 0.9f;
+const float encounterDistance = 0.16f;
+const float meleeAttackInterval = 0.8f; // Seconds per swing; a tuning value.
+const float bruteAttackInterval = 1.1f; // Heavy axe swings have a longer windup.
 
 
 // 3. Game states and necessary drawing declarations
@@ -155,10 +161,11 @@ enum class GameState {
     Playing,
     Paused,
     Victory,
-    Defeat
+    Defeat,
+    SoundSettings
 };
 
-constexpr int circleSegments = 48;
+const int circleSegments = 48;
 
 // These shapes and numbers are used before their definitions below.
 
@@ -167,12 +174,11 @@ void drawRectangle(float x, float y, float width, float height, float angle,
                    float red, float green, float blue, bool outline = false);
 void drawCircle(float x, float y, float diameter, glm::vec3 color);
 void drawTriangle(float x, float y, float width, float height, glm::vec3 color);
-void drawNumber(int number, float originX, float originY, float size, bool centered = false);
 
 
 // 4. Cutscene timeline
 
-constexpr float cutsceneDuration = 18.0f;
+const float cutsceneDuration = 18.0f;
 
 float cutsceneProgress(float time, float start, float end) {
     return std::clamp((time - start) / (end - start), 0.0f, 1.0f);
@@ -242,37 +248,8 @@ CutscenePose getCutscenePose(float time) {
 
 // 5. Text patterns and coordinate/layout helpers
 
-// A small hand-defined 5x7 alphabet. Each row uses five bits, left to right.
-const unsigned char* getLetterPattern(char letter) {
-    static constexpr unsigned char alphabet[26][7] = {
-        {14,17,17,31,17,17,17}, // A
-        {30,17,17,30,17,17,30}, // B
-        {14,17,16,16,16,17,14}, // C
-        {30,17,17,17,17,17,30}, // D
-        {31,16,16,30,16,16,31}, // E
-        {31,16,16,30,16,16,16}, // F
-        {14,17,16,23,17,17,14}, // G
-        {17,17,17,31,17,17,17}, // H
-        {31,4,4,4,4,4,31},     // I
-        {7,2,2,2,18,18,12},    // J
-        {17,18,20,24,20,18,17}, // K
-        {16,16,16,16,16,16,31}, // L
-        {17,27,21,21,17,17,17}, // M
-        {17,25,21,19,17,17,17}, // N
-        {14,17,17,17,17,17,14}, // O
-        {30,17,17,30,16,16,16}, // P
-        {14,17,17,17,21,18,13}, // Q
-        {30,17,17,30,20,18,17}, // R
-        {15,16,16,14,1,1,30},  // S
-        {31,4,4,4,4,4,4},      // T
-        {17,17,17,17,17,17,14}, // U
-        {17,17,17,17,17,10,4},  // V
-        {17,17,17,21,21,21,10}, // W
-        {17,17,10,4,10,17,17},  // X
-        {17,17,10,4,4,4,4},     // Y
-        {31,1,2,4,8,16,31}     // Z
-    };
-    return letter >= 'A' && letter <= 'Z' ? alphabet[letter - 'A'] : nullptr;
+float laneCenterY(int lane) {
+    return fieldTop - (lane + 0.5f) * laneHeight;
 }
 
 bool mouseToGamePosition(double mouseX, double mouseY, int width, int height, glm::vec2& position) {
@@ -320,7 +297,6 @@ float cutsceneTime = 0.0f;
 float worldAnimationTime = 0.0f;
 bool selectedLanes[laneCount] = {};
 int selectedCard = -1;
-bool cardAvailable[playerCardCount] = {true, false, false};
 bool hasCollectedCoins = false;
 int coins = 30;
 std::vector<Player> players;
@@ -331,26 +307,24 @@ std::vector<Projectile> arrows;
 std::vector<Projectile> highProjectiles;
 std::vector<Projectile> lowProjectiles;
 
-void refreshCardAvailability() {
-    for (int card = 0; card < playerCardCount; ++card) {
-        // The current economy interpretation enables advanced cards after the first pickup.
-        cardAvailable[card] = (card == 0 || hasCollectedCoins) &&
-                              coins >= cardCosts[card];
-    }
-    if (selectedCard >= 0 && !cardAvailable[selectedCard]) selectedCard = -1;
+bool isCardAvailable(int card) {
+    return card >= 0 && card < playerCardCount &&
+           (card == 0 || hasCollectedCoins) && coins >= cardCosts[card];
+}
+
+void clearUnavailableSelection() {
+    if (selectedCard >= 0 && !isCardAvailable(selectedCard)) selectedCard = -1;
 }
 
 bool purchaseGuardian(int card, int lane) {
     if (gameState != GameState::Playing || card < 0 || card >= playerCardCount ||
         lane < 0 || lane >= laneCount) return false;
-    refreshCardAvailability();
-    if (!cardAvailable[card]) return false;
-    float startY = fieldTop - (lane + 0.5f) * laneHeight;
+    if (!isCardAvailable(card)) return false;
+    float startY = laneCenterY(lane);
     players.emplace_back(cardTypes[card], lane, fieldLeft + 0.07f, startY);
     coins -= cardCosts[card];
     selectedLanes[lane] = true;
     selectedCard = -1;
-    refreshCardAvailability();
     return true;
 }
 
@@ -360,50 +334,40 @@ static bool canPlayerEvade(const Player& player) {
            player.action != CharacterAction::Jumping && player.action != CharacterAction::Ducking;
 }
 
-void startJump() {
+void startEvasion(CharacterAction action) {
     for (Player& player : players) {
         if (!canPlayerEvade(player)) continue;
-        player.action = CharacterAction::Jumping;
-        player.jumpTimer = 0.0f;
+        player.action = action;
+        float& timer = action == CharacterAction::Jumping ? player.jumpTimer : player.duckTimer;
+        timer = 0.0f;
+    }
+}
+
+void startJump() { startEvasion(CharacterAction::Jumping); }
+void startDuck() { startEvasion(CharacterAction::Ducking); }
+
+void updateEvasion(CharacterAction action, float duration, float deltaTime) {
+    for (Player& player : players) {
+        if (player.action != action) continue;
+        if (player.health <= 0) {
+            player.action = CharacterAction::Defeated;
+            continue;
+        }
+        float& timer = action == CharacterAction::Jumping ? player.jumpTimer : player.duckTimer;
+        timer += deltaTime;
+        if (timer >= duration) {
+            timer = 0.0f;
+            player.action = CharacterAction::Walking;
+        }
     }
 }
 
 void updateJumps(float deltaTime) {
-    for (Player& player : players) {
-        if (player.action != CharacterAction::Jumping) continue;
-        if (player.health <= 0) {
-            player.action = CharacterAction::Defeated;
-            continue;
-        }
-        player.jumpTimer += deltaTime;
-        if (player.jumpTimer >= jumpDuration) {
-            player.jumpTimer = 0.0f;
-            player.action = CharacterAction::Walking;
-        }
-    }
-}
-
-void startDuck() {
-    for (Player& player : players) {
-        if (!canPlayerEvade(player)) continue;
-        player.action = CharacterAction::Ducking;
-        player.duckTimer = 0.0f;
-    }
+    updateEvasion(CharacterAction::Jumping, jumpDuration, deltaTime);
 }
 
 void updateDucks(float deltaTime) {
-    for (Player& player : players) {
-        if (player.action != CharacterAction::Ducking) continue;
-        if (player.health <= 0) {
-            player.action = CharacterAction::Defeated;
-            continue;
-        }
-        player.duckTimer += deltaTime;
-        if (player.duckTimer >= duckDuration) {
-            player.duckTimer = 0.0f;
-            player.action = CharacterAction::Walking;
-        }
-    }
+    updateEvasion(CharacterAction::Ducking, duckDuration, deltaTime);
 }
 
 float getJumpHeight(const Player& player) {
@@ -446,15 +410,22 @@ void resetGame() {
     hasCollectedCoins = false;
     selectedCard = -1;
     std::fill(std::begin(selectedLanes), std::end(selectedLanes), false);
-    refreshCardAvailability();
+}
+
+void startNewGame(GameState initialState = GameState::Playing) {
+    resetGame();
+    gameState = initialState;
+}
+
+void returnToMainMenu() {
+    resetGame();
+    gameState = GameState::MainMenu;
 }
 
 void updateCutscene(float deltaTime) {
-    if (gameState != GameState::Cutscene) return;
     cutsceneTime += deltaTime;
     if (cutsceneTime >= cutsceneDuration) {
-        resetGame();
-        gameState = GameState::Playing;
+        startNewGame();
     }
 }
 
@@ -534,9 +505,8 @@ static void updateEnemyProjectiles(std::vector<Projectile>& shots,
         projectile.x = nextX;
         if (projectile.x < fieldLeft - 0.2f) projectile.active = false;
     }
-    for (int index = static_cast<int>(shots.size()) - 1; index >= 0; --index) {
-        if (!shots[index].active) shots.erase(shots.begin() + index);
-    }
+    shots.erase(std::remove_if(shots.begin(), shots.end(),
+        [](const Projectile& projectile) { return !projectile.active; }), shots.end());
 }
 
 
@@ -607,9 +577,8 @@ void updateArrows(float deltaTime) {
         arrow.x = nextX;
         if (arrow.x > fieldRight + 0.2f) arrow.active = false;
     }
-    for (int index = static_cast<int>(arrows.size()) - 1; index >= 0; --index) {
-        if (!arrows[index].active) arrows.erase(arrows.begin() + index);
-    }
+    arrows.erase(std::remove_if(arrows.begin(), arrows.end(),
+        [](const Projectile& arrow) { return !arrow.active; }), arrows.end());
 }
 
 void updateMeleeCombat(float deltaTime) {
@@ -694,10 +663,9 @@ void updateCollectibles() {
             break; // Overlapping guardians cannot collect the same token twice.
         }
     }
-    for (int index = static_cast<int>(collectibles.size()) - 1; index >= 0; --index) {
-        if (collectibles[index].collected) collectibles.erase(collectibles.begin() + index);
-    }
-    refreshCardAvailability();
+    collectibles.erase(std::remove_if(collectibles.begin(), collectibles.end(),
+        [](const Collectible& collectible) { return collectible.collected; }), collectibles.end());
+    clearUnavailableSelection();
 }
 
 void removeDefeatedCharacters() {
@@ -707,12 +675,10 @@ void removeDefeatedCharacters() {
         if (enemy.health <= 0)
             collectibles.push_back({enemy.lane, enemy.x, enemy.y});
     }
-    for (int index = static_cast<int>(players.size()) - 1; index >= 0; --index) {
-        if (players[index].health <= 0) players.erase(players.begin() + index);
-    }
-    for (int index = static_cast<int>(enemies.size()) - 1; index >= 0; --index) {
-        if (enemies[index].health <= 0) enemies.erase(enemies.begin() + index);
-    }
+    players.erase(std::remove_if(players.begin(), players.end(),
+        [](const Player& player) { return player.health <= 0; }), players.end());
+    enemies.erase(std::remove_if(enemies.begin(), enemies.end(),
+        [](const Enemy& enemy) { return enemy.health <= 0; }), enemies.end());
 }
 
 void updateCombatStates() {
@@ -822,7 +788,7 @@ void updateWaves(std::mt19937& randomGenerator, float deltaTime) {
             type = types[wave.enemiesSpawned % 3];
         }
         int lane = randomLane(randomGenerator);
-        float y = fieldTop - (lane + 0.5f) * laneHeight;
+        float y = laneCenterY(lane);
         enemies.emplace_back(type, lane, fieldRight, y);
         ++wave.enemiesSpawned;
     }
@@ -870,26 +836,38 @@ void updateGame(float deltaTime, std::mt19937& randomGenerator) {
 // 7. Keyboard, mouse, and menu input
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action != GLFW_PRESS) return;
+    if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+
+    // Volume keys work on every screen. '+' is Shift+'=' on most keyboards.
+    if (key == GLFW_KEY_EQUAL || key == GLFW_KEY_KP_ADD) {
+        audio::volumeUp();
+        return;
+    }
+    if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+        audio::volumeDown();
+        return;
+    }
+    if (action != GLFW_PRESS) return; // Only volume keys repeat when held.
+    if (key == GLFW_KEY_N) {
+        audio::toggleMute();
+        return;
+    }
 
     if (key == GLFW_KEY_M) {
-        resetGame();
-        gameState = GameState::MainMenu;
+        returnToMainMenu();
         return;
     }
 
     switch (gameState) {
     case GameState::MainMenu:
         if (key == GLFW_KEY_ENTER) {
-            resetGame();
-            gameState = GameState::Cutscene;
+            startNewGame(GameState::Cutscene);
         }
         if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(window, true);
         break;
     case GameState::Cutscene:
         if (key == GLFW_KEY_ENTER || key == GLFW_KEY_SPACE) {
-            resetGame();
-            gameState = GameState::Playing;
+            startNewGame();
         }
         break;
     case GameState::Playing:
@@ -904,9 +882,12 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     case GameState::Victory:
     case GameState::Defeat:
         if (key == GLFW_KEY_ENTER) {
-            resetGame();
-            gameState = GameState::Playing;
+            startNewGame();
         }
+        break;
+    case GameState::SoundSettings:
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER)
+            gameState = GameState::MainMenu;
         break;
     }
 }
@@ -934,7 +915,19 @@ int menuButtonAtPosition(const glm::vec2& position, float centerX, float width,
 }
 
 int mainMenuButtonAtPosition(const glm::vec2& position) {
-    return menuButtonAtPosition(position, menuCenterX, menuButtonWidth, menuButtonY, 2);
+    return menuButtonAtPosition(position, menuCenterX, menuButtonWidth, mainMenuButtonY, 3);
+}
+
+int soundMenuButtonAtPosition(const glm::vec2& position) {
+    return menuButtonAtPosition(position, 0.0f, pauseButtonWidth, soundButtonY, 4);
+}
+
+void activateSoundMenuButton(int button) {
+    if (gameState != GameState::SoundSettings) return;
+    if (button == 0) audio::volumeUp();
+    if (button == 1) audio::volumeDown();
+    if (button == 2) audio::toggleMute();
+    if (button == 3) gameState = GameState::MainMenu;
 }
 
 int pauseMenuButtonAtPosition(const glm::vec2& position) {
@@ -952,26 +945,22 @@ void activatePauseMenuButton(int button) {
         return;
     }
     if (button == 1) {
-        resetGame();
-        gameState = GameState::Playing;
+        startNewGame();
         return;
     }
     if (button == 2) {
-        resetGame();
-        gameState = GameState::MainMenu;
+        returnToMainMenu();
     }
 }
 
 void activateResultMenuButton(int button) {
     if (gameState != GameState::Victory && gameState != GameState::Defeat) return;
     if (button == 0) {
-        resetGame();
-        gameState = GameState::Playing;
+        startNewGame();
         return;
     }
     if (button == 1) {
-        resetGame();
-        gameState = GameState::MainMenu;
+        returnToMainMenu();
     }
 }
 
@@ -1003,36 +992,52 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (!getMousePosition(window, position)) return;
     if (gameState == GameState::MainMenu) {
         int menuButton = mainMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
         if (menuButton == 0) {
-            resetGame();
-            gameState = GameState::Cutscene;
+            startNewGame(GameState::Cutscene);
         } else if (menuButton == 1) {
+            gameState = GameState::SoundSettings;
+        } else if (menuButton == 2) {
             glfwSetWindowShouldClose(window, true);
         }
         return;
     }
+    if (gameState == GameState::SoundSettings) {
+        int menuButton = soundMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
+        activateSoundMenuButton(menuButton);
+        return;
+    }
     if (gameState == GameState::Paused) {
-        activatePauseMenuButton(pauseMenuButtonAtPosition(position));
+        int menuButton = pauseMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
+        activatePauseMenuButton(menuButton);
         return;
     }
     if (gameState == GameState::Victory || gameState == GameState::Defeat) {
-        activateResultMenuButton(resultMenuButtonAtPosition(position));
+        int menuButton = resultMenuButtonAtPosition(position);
+        if (menuButton != -1) audio::playEffect(SoundEffect::MenuClick);
+        activateResultMenuButton(menuButton);
         return;
     }
     if (gameState != GameState::Playing) return;
     int card = cardAtPosition(position);
     if (card != -1) {
-        if (cardAvailable[card]) selectedCard = card;
+        if (!isCardAvailable(card)) return;
+        selectedCard = card;
+        audio::playEffect(SoundEffect::CardSelect);
         return; // Card clicks must not change lane selection.
     }
     int lane = laneAtPosition(position);
     if (lane == -1) return;
 
     if (selectedCard != -1) {
-        purchaseGuardian(selectedCard, lane);
+        if (purchaseGuardian(selectedCard, lane))
+            audio::playEffect(SoundEffect::GuardianPlaced);
         return;
     }
     selectedLanes[lane] = !selectedLanes[lane];
+    audio::playEffect(SoundEffect::LaneSelect);
 }
 
 
@@ -1273,23 +1278,35 @@ void drawCircle(float x, float y, float diameter, glm::vec3 color) {
     drawShape(GL_TRIANGLE_FAN, 9, circleSegments + 2, x, y, diameter, diameter, 0, color);
 }
 
+float textWidth(const char* text, float pixelSize) {
+    return stb_easy_font_width(const_cast<char*>(text)) * pixelSize;
+}
+
 void drawText(const char* text, float centerX, float centerY, float pixelSize,
               glm::vec3 color) {
-    int length = 0;
-    while (text[length] != '\0') ++length;
-    float left = centerX - (length * 6 - 1) * pixelSize * 0.5f;
-    for (int letter = 0; letter < length; ++letter) {
-        const unsigned char* rows = getLetterPattern(text[letter]);
-        if (!rows) continue; // Spaces leave a gap.
-        for (int row = 0; row < 7; ++row) {
-            for (int column = 0; column < 5; ++column) {
-                if ((rows[row] & (1 << (4 - column))) == 0) continue;
-                drawRectangle(left + (letter * 6 + column + 0.5f) * pixelSize,
-                              centerY + (3 - row) * pixelSize,
-                              pixelSize * 0.92f, pixelSize * 0.92f, 0.0f,
-                              color.r, color.g, color.b);
-            }
-        }
+    if (!text[0]) return;
+    // stb returns four vertices per rectangular stroke, with y pointing down.
+    struct FontVertex { float x, y, z; unsigned char color[4]; };
+    std::vector<FontVertex> vertices(std::strlen(text) * 128);
+    int quads = stb_easy_font_print(0, 0, const_cast<char*>(text), nullptr,
+                                   vertices.data(), static_cast<int>(vertices.size() * sizeof(FontVertex)));
+    if (quads == 0) return;
+    float top = vertices[0].y, bottom = top;
+    for (int vertex = 0; vertex < quads * 4; ++vertex) {
+        top = std::min(top, vertices[vertex].y);
+        bottom = std::max(bottom, vertices[vertex].y);
+    }
+    float left = centerX - textWidth(text, pixelSize) * 0.5f;
+    float middleY = (top + bottom) * 0.5f;
+    for (int quad = 0; quad < quads; ++quad) {
+        const FontVertex& first = vertices[quad * 4];
+        const FontVertex& opposite = vertices[quad * 4 + 2];
+        // Reuse our triangle-based rectangle renderer for core-profile OpenGL.
+        drawRectangle(left + (first.x + opposite.x) * 0.5f * pixelSize,
+                      centerY - ((first.y + opposite.y) * 0.5f - middleY) * pixelSize,
+                      (opposite.x - first.x) * pixelSize,
+                      (opposite.y - first.y) * pixelSize, 0,
+                      color.r, color.g, color.b);
     }
 }
 
@@ -1301,7 +1318,12 @@ void drawMenuButton(const char* label, float x, float y, float width, bool hover
     drawRectangle(x, y, width, menuButtonHeight, 0.0f, border.r, border.g, border.b);
     drawRectangle(x, y, width - 0.025f, menuButtonHeight - 0.025f,
                   0.0f, fill.r, fill.g, fill.b);
-    drawText(label, x, y, 0.011f, glm::vec3(1.0f, 0.93f, 0.72f));
+    // Long labels shrink to fit inside the button; shorter ones keep the usual size.
+    float textSize = 0.011f;
+    float labelWidth = textWidth(label, textSize);
+    float maxWidth = width - 0.07f;
+    if (labelWidth > maxWidth) textSize *= maxWidth / labelWidth;
+    drawText(label, x, y, textSize, glm::vec3(1.0f, 0.93f, 0.72f));
 }
 
 // Parts are positioned relative to the character currently being drawn.
@@ -1490,13 +1512,21 @@ void drawShieldGuardian(const Player& player, float scale = 1.0f) {
     }
 }
 
+void drawPlayer(const Player& player, float scale = 1.0f, float walkPhase = 0.0f) {
+    switch (player.type) {
+    case PlayerType::TempleWarrior: drawTempleWarrior(player, scale, walkPhase); break;
+    case PlayerType::RoyalArcher: drawRoyalArcher(player, scale, walkPhase); break;
+    case PlayerType::ShieldGuardian: drawShieldGuardian(player, scale); break;
+    }
+}
+
 void drawPlayerCards(int hoveredCard) {
     const char* names[] = {"WARRIOR", "ARCHER", "SHIELD"};
     const glm::vec3 accents[] = {
         {0.85f, 0.48f, 0.23f}, {0.28f, 0.65f, 0.61f}, {0.49f, 0.52f, 0.78f}
     };
     for (int card = 0; card < playerCardCount; ++card) {
-        bool available = cardAvailable[card];
+        bool available = isCardAvailable(card);
         bool selected = available && selectedCard == card;
         bool hovered = available && hoveredCard == card;
         glUniform1i(grayscaleLocation, available ? GL_FALSE : GL_TRUE);
@@ -1519,22 +1549,12 @@ void drawPlayerCards(int hoveredCard) {
         drawText(names[card],
                  x, cardY + 0.122f, 0.0048f, glm::vec3(1.0f, 0.91f, 0.7f));
         Player portrait(cardTypes[card], 0, x - 0.02f, cardY - 0.007f);
-        switch (portrait.type) {
-        case PlayerType::TempleWarrior:
-            drawTempleWarrior(portrait, 0.66f);
-            break;
-        case PlayerType::RoyalArcher:
-            drawRoyalArcher(portrait, 0.66f);
-            break;
-        case PlayerType::ShieldGuardian:
-            drawShieldGuardian(portrait, 0.66f);
-            break;
-        }
+        drawPlayer(portrait, 0.66f);
         drawRectangle(x, cardY - 0.115f, 0.114f, 0.052f, 0,
                       border.r, border.g, border.b);
         drawRectangle(x, cardY - 0.115f, 0.108f, 0.046f, 0, 0.10f, 0.12f, 0.14f);
-        drawNumber(cardCosts[card],
-                   x, cardY - 0.115f, 0.40f, true);
+        drawText(std::to_string(cardCosts[card]).c_str(),
+                 x, cardY - 0.115f, 0.006f, glm::vec3(1.0f, 0.9f, 0.55f));
         if (!available) {
             float lockX = x + 0.083f, lockY = cardY - 0.116f;
             drawRectangle(lockX, lockY + 0.014f, 0.018f, 0.024f, 0, 0.6f, 0.6f, 0.6f);
@@ -1700,52 +1720,6 @@ void drawGoldenScarab(float x, float y, float scale) {
     drawRectangle(x, y, 0.005f * scale, 0.065f * scale, 0.0f, 0.4f, 0.26f, 0.08f);
 }
 
-void drawNumber(int number, float originX, float originY, float size, bool centered) {
-    // Seven-segment digits: bits represent top, upper-right, lower-right,
-    // bottom, lower-left, upper-left, and middle segments respectively.
-    const unsigned int digitMasks[] = {
-        0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F
-    };
-    const float segmentX[] = {0.0f, 0.024f, 0.024f, 0.0f, -0.024f, -0.024f, 0.0f};
-    const float segmentY[] = {0.05f, 0.025f, -0.025f, -0.05f, -0.025f, 0.025f, 0.0f};
-    char digits[16];
-    std::snprintf(digits, sizeof(digits), "%d", number);
-    int digitCount = 0;
-    while (digits[digitCount] != '\0') ++digitCount;
-    // Fit longer balances into the same panel rather than overflowing it.
-    float scale = size * (digitCount > 4 ? 4.0f / digitCount : 1.0f);
-    if (centered) {
-        // Center the visible segments, including narrow digits such as 1.
-        float left = 100.0f, right = -100.0f;
-        for (int digit = 0; digit < digitCount; ++digit) {
-            int value = digits[digit] - '0';
-            if (value < 0 || value > 9) continue;
-            for (int segment = 0; segment < 7; ++segment) {
-                if ((digitMasks[value] & (1u << segment)) == 0) continue;
-                bool horizontal = segment == 0 || segment == 3 || segment == 6;
-                float center = digit * 0.09f + segmentX[segment];
-                float halfWidth = (horizontal ? 0.048f : 0.008f) * 0.5f;
-                left = std::min(left, center - halfWidth);
-                right = std::max(right, center + halfWidth);
-            }
-        }
-        originX -= (left + right) * 0.5f * scale;
-    }
-    for (int digit = 0; digit < digitCount; ++digit) {
-        int value = digits[digit] - '0';
-        if (value < 0 || value > 9) continue;
-        float x = originX + digit * 0.09f * scale;
-        for (int segment = 0; segment < 7; ++segment) {
-            if ((digitMasks[value] & (1u << segment)) == 0) continue;
-            bool horizontal = segment == 0 || segment == 3 || segment == 6;
-            drawRectangle(x + segmentX[segment] * scale, originY + segmentY[segment] * scale,
-                          (horizontal ? 0.048f : 0.008f) * scale,
-                          (horizontal ? 0.008f : 0.05f) * scale,
-                          0.0f, 1.0f, 0.9f, 0.55f);
-        }
-    }
-}
-
 void drawGameStatus(int balance, int waveIndex) {
     const glm::vec3 gold(0.88f, 0.68f, 0.34f);
     drawPanelRectangle(.6f, .82f, .60f, .26f, glm::vec3(.66f, .46f, .25f));
@@ -1761,17 +1735,18 @@ void drawGameStatus(int balance, int waveIndex) {
     drawPanelRectangle(.37f, .82f, .104f, .194f, gold);
     drawPanelRectangle(.37f, .82f, .092f, .182f, glm::vec3(.09f, .25f, .31f));
     drawGoldenScarab(.37f, .82f, .90f);
-    drawNumber(balance, .53f, .842f,
-               balance < 1000 ? .80f : .58f, true);
+    std::string balanceText = std::to_string(balance);
+    float balanceSize = std::min(0.012f, 0.18f / textWidth(balanceText.c_str(), 1.0f));
+    drawText(balanceText.c_str(), .53f, .842f, balanceSize, glm::vec3(1.0f, 0.9f, 0.55f));
     drawText("SCARABS",
              .53f, .755f, .0034f, glm::vec3(.81f, .70f, .51f));
     drawPanelRectangle(.767f, .82f, .206f, .194f, gold);
     drawPanelRectangle(.767f, .82f, .194f, .182f, glm::vec3(.09f, .25f, .31f));
     drawText("WAVE",
              .767f, .876f, .0042f, glm::vec3(.95f, .84f, .61f));
-    drawNumber(std::min(waveIndex + 1, waveCount), .717f, .79f, .52f, true);
-    drawPanelRectangle(.767f, .79f, .003f, .046f, gold, -25);
-    drawNumber(waveCount, .814f, .79f, .38f, true);
+    std::string waveText = std::to_string(std::min(waveIndex + 1, waveCount)) +
+                           "/" + std::to_string(waveCount);
+    drawText(waveText.c_str(), .767f, .79f, .0075f, glm::vec3(1.0f, 0.9f, 0.55f));
 }
 
 void drawArrow(const Projectile& arrow) {
@@ -1798,19 +1773,20 @@ void drawLowProjectile(const Projectile& projectile) {
                   1.0f, 0.92f, 0.55f);
 }
 
-void setDamageTint(int health, int maxHealth) {
-    float remaining = maxHealth > 0
+float healthFraction(int health, int maxHealth) {
+    return maxHealth > 0
         ? glm::clamp(static_cast<float>(health) / maxHealth, 0.0f, 1.0f)
         : 0.0f;
-    glUniform1f(damageLocation, 1.0f - remaining);
+}
+
+void setDamageTint(int health, int maxHealth) {
+    glUniform1f(damageLocation, 1.0f - healthFraction(health, maxHealth));
 }
 
 void drawHealthBar(float x, float y, int health, int maxHealth) {
     const float width = 0.17f;
     const float height = 0.018f;
-    float fraction = maxHealth > 0
-        ? glm::clamp(static_cast<float>(health) / maxHealth, 0.0f, 1.0f)
-        : 0.0f;
+    float fraction = healthFraction(health, maxHealth);
 
     drawRectangle(x, y, width + 0.008f, height + 0.008f, 0.0f,
                   0.08f, 0.06f, 0.05f);
@@ -1833,20 +1809,16 @@ void drawHealthBar(float x, float y, int health, int maxHealth) {
 
 bool shouldShowPlacementPreview(int lane) {
     return gameState == GameState::Playing && lane >= 0 && lane < laneCount &&
-           selectedCard >= 0 && selectedCard < playerCardCount && cardAvailable[selectedCard];
+           selectedCard >= 0 && selectedCard < playerCardCount && isCardAvailable(selectedCard);
 }
 
 void drawPlacementPreview(int lane) {
     if (!shouldShowPlacementPreview(lane)) return;
     Player ghost(cardTypes[selectedCard], lane, fieldLeft + 0.07f,
-                 fieldTop - (lane + 0.5f) * laneHeight);
+                 laneCenterY(lane));
     ghost.action = CharacterAction::Idle;
     drawingOpacity = 0.5f;
-    switch (ghost.type) {
-    case PlayerType::TempleWarrior: drawTempleWarrior(ghost); break;
-    case PlayerType::RoyalArcher: drawRoyalArcher(ghost); break;
-    case PlayerType::ShieldGuardian: drawShieldGuardian(ghost); break;
-    }
+    drawPlayer(ghost);
     drawingOpacity = 1.0f;
 }
 
@@ -1937,11 +1909,31 @@ void drawMainMenu(int hoveredButton) {
     drawText("GUARDIANS OF", menuCenterX, 0.62f, 0.016f, glm::vec3(1.0f, 0.83f, 0.35f));
     drawText("THE SACRED SUN", menuCenterX, 0.45f, 0.014f, glm::vec3(1.0f, 0.83f, 0.35f));
     drawText("EGYPTIAN TEMPLE DEFENSE", menuCenterX, 0.28f, 0.007f, glm::vec3(0.85f, 0.8f, 0.67f));
-    const char* labels[] = {"START", "EXIT"};
-    for (int button = 0; button < 2; ++button) {
+    const char* labels[] = {"START", "SOUND SETTINGS", "EXIT"};
+    for (int button = 0; button < 3; ++button) {
         drawMenuButton(labels[button],
-                       menuCenterX, menuButtonY[button], menuButtonWidth, hoveredButton == button);
+                       menuCenterX, mainMenuButtonY[button], menuButtonWidth, hoveredButton == button);
     }
+}
+
+// The font draws the complete readout, including digits and the percent sign.
+void drawVolumeReadout(float x, float y, float size, glm::vec3 color) {
+    char text[32];
+    std::snprintf(text, sizeof(text), "%s %d%%",
+                  audio::isMuted() ? "MUTED" : "VOLUME", audio::volumePercent());
+    drawText(text, x, y, size, color);
+}
+
+void drawSoundMenu(int hoveredButton) {
+    drawRectangle(0.0f, -0.05f, 1.08f, 1.5f, 0.0f, 0.69f, 0.51f, 0.24f);
+    drawRectangle(0.0f, -0.05f, 1.04f, 1.46f, 0.0f, 0.08f, 0.1f, 0.16f);
+    drawText("SOUND SETTINGS", 0.0f, 0.55f, 0.0105f, glm::vec3(1.0f, 0.83f, 0.35f));
+    drawVolumeReadout(0.0f, 0.37f, 0.011f, audio::isMuted()
+        ? glm::vec3(0.86f, 0.45f, 0.35f) : glm::vec3(0.95f, 0.91f, 0.8f));
+    const char* labels[] = {"VOLUME UP", "VOLUME DOWN", audio::isMuted() ? "UNMUTE" : "MUTE", "BACK"};
+    for (int button = 0; button < 4; ++button)
+        drawMenuButton(labels[button],
+                       0.0f, soundButtonY[button], pauseButtonWidth, hoveredButton == button);
 }
 
 void drawPauseMenu(int hoveredButton) {
@@ -1980,7 +1972,7 @@ void drawPlayfield(int hoveredLane) {
                   0.35f, 0.24f, 0.13f);
 
     for (int lane = 0; lane < laneCount; ++lane) {
-        float y = fieldTop - (lane + 0.5f) * laneHeight;
+        float y = laneCenterY(lane);
         float shade = (lane % 2 == 0) ? 0.0f : 0.05f;
         glm::vec3 color(0.74f + shade, 0.57f + shade, 0.34f + shade);
         if (selectedLanes[lane])
@@ -2023,15 +2015,21 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
     if (gameState == GameState::MainMenu) {
         int hoveredButton = mouseInside ? mainMenuButtonAtPosition(mousePosition) : -1;
         drawMainMenu(hoveredButton);
+        drawText("PLUS MINUS VOLUME   N MUTE", menuCenterX, -0.62f, 0.0045f,
+                 glm::vec3(0.8f, 0.8f, 0.75f));
+        drawVolumeReadout(menuCenterX, -0.70f, 0.0045f, glm::vec3(0.8f, 0.8f, 0.75f));
+        return;
+    }
+    if (gameState == GameState::SoundSettings) {
+        drawTemple();
+        int hoveredButton = mouseInside ? soundMenuButtonAtPosition(mousePosition) : -1;
+        drawSoundMenu(hoveredButton);
         return;
     }
     if (gameState == GameState::Cutscene) {
         drawCutscene();
         return;
     }
-    if (gameState != GameState::Playing && gameState != GameState::Paused &&
-        gameState != GameState::Victory && gameState != GameState::Defeat) return;
-
     drawPlayfield(hoveredLane);
     for (const Collectible& collectible : collectibles) {
         drawGoldenScarab(collectible.x, collectible.y - 0.075f, 0.65f);
@@ -2053,19 +2051,8 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
         float heightScale = player.action == CharacterAction::Ducking ? duckHeightScale : 1.0f;
         // Lower the compressed pose to keep its feet near the lane baseline.
         pose.y -= 0.12f * (1.0f - heightScale);
-        switch (player.type) {
-        case PlayerType::TempleWarrior:
-            drawTempleWarrior(pose, 1.0f,
-                              player.action == CharacterAction::Walking ? player.walkPhase : 0.0f);
-            break;
-        case PlayerType::RoyalArcher:
-            drawRoyalArcher(pose, 1.0f,
-                            player.action == CharacterAction::Walking ? player.walkPhase : 0.0f);
-            break;
-        case PlayerType::ShieldGuardian:
-            drawShieldGuardian(pose);
-            break;
-        }
+        drawPlayer(pose, 1.0f,
+                   player.action == CharacterAction::Walking ? player.walkPhase : 0.0f);
         glUniform1f(damageLocation, 0.0f);
         healthLabels.push_back({glm::vec2(pose.x, pose.y + 0.17f * heightScale),
                                 player.health, player.maxHealth});
@@ -2120,6 +2107,22 @@ void drawFrame(const glm::vec2& mousePosition, bool mouseInside) {
         int hoveredButton = mouseInside ? resultMenuButtonAtPosition(mousePosition) : -1;
         drawResultMenu(hoveredButton);
     }
+    drawVolumeReadout(0.72f, -0.93f, 0.0045f, glm::vec3(0.9f, 0.88f, 0.8f));
+}
+
+// Music and result sounds follow the game state. Reacting to the change of state
+// here plays each victory or game over sound once, when that screen opens.
+void updateAudioForState(GameState previous, GameState current) {
+    if (previous == current) return;
+    bool result = current == GameState::Victory || current == GameState::Defeat;
+    if (result) {
+        audio::pauseMusic();
+        audio::playResult(current == GameState::Victory
+            ? ResultSound::Victory : ResultSound::GameOver);
+        return;
+    }
+    audio::stopResults();
+    audio::playMusic();
 }
 
 
@@ -2219,6 +2222,9 @@ int main() {
     glBindVertexArray(0);
 
     initializeDrawing(VAO, shaderProgram);
+    audio::initialize(); // Without a sound device the game simply runs silently.
+    audio::playMusic();
+    GameState audioState = gameState;
     std::mt19937 randomGenerator(std::random_device{}());
     double lastFrameTime = glfwGetTime();
 
@@ -2244,9 +2250,13 @@ int main() {
         glm::vec2 mousePosition;
         bool mouseInside = getMousePosition(window, mousePosition);
         drawFrame(mousePosition, mouseInside);
+        updateAudioForState(audioState, gameState);
+        audioState = gameState;
 
         glfwSwapBuffers(window);
     }
+
+    audio::shutdown();
 
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
