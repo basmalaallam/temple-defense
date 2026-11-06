@@ -6,12 +6,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "audio.h"
+#include "external/stb/stb_easy_font.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <random>
+#include <string>
 #include <vector>
 
 
@@ -172,7 +174,6 @@ void drawRectangle(float x, float y, float width, float height, float angle,
                    float red, float green, float blue, bool outline = false);
 void drawCircle(float x, float y, float diameter, glm::vec3 color);
 void drawTriangle(float x, float y, float width, float height, glm::vec3 color);
-void drawNumber(int number, float originX, float originY, float size, bool centered = false);
 
 
 // 4. Cutscene timeline
@@ -246,39 +247,6 @@ CutscenePose getCutscenePose(float time) {
 
 
 // 5. Text patterns and coordinate/layout helpers
-
-// A small hand-defined 5x7 alphabet. Each row uses five bits, left to right.
-const unsigned char* getLetterPattern(char letter) {
-    static const unsigned char alphabet[26][7] = {
-        {14,17,17,31,17,17,17}, // A
-        {30,17,17,30,17,17,30}, // B
-        {14,17,16,16,16,17,14}, // C
-        {30,17,17,17,17,17,30}, // D
-        {31,16,16,30,16,16,31}, // E
-        {31,16,16,30,16,16,16}, // F
-        {14,17,16,23,17,17,14}, // G
-        {17,17,17,31,17,17,17}, // H
-        {31,4,4,4,4,4,31},     // I
-        {7,2,2,2,18,18,12},    // J
-        {17,18,20,24,20,18,17}, // K
-        {16,16,16,16,16,16,31}, // L
-        {17,27,21,21,17,17,17}, // M
-        {17,25,21,19,17,17,17}, // N
-        {14,17,17,17,17,17,14}, // O
-        {30,17,17,30,16,16,16}, // P
-        {14,17,17,17,21,18,13}, // Q
-        {30,17,17,30,20,18,17}, // R
-        {15,16,16,14,1,1,30},  // S
-        {31,4,4,4,4,4,4},      // T
-        {17,17,17,17,17,17,14}, // U
-        {17,17,17,17,17,10,4},  // V
-        {17,17,17,21,21,21,10}, // W
-        {17,17,10,4,10,17,17},  // X
-        {17,17,10,4,4,4,4},     // Y
-        {31,1,2,4,8,16,31}     // Z
-    };
-    return letter >= 'A' && letter <= 'Z' ? alphabet[letter - 'A'] : nullptr;
-}
 
 float laneCenterY(int lane) {
     return fieldTop - (lane + 0.5f) * laneHeight;
@@ -1310,22 +1278,35 @@ void drawCircle(float x, float y, float diameter, glm::vec3 color) {
     drawShape(GL_TRIANGLE_FAN, 9, circleSegments + 2, x, y, diameter, diameter, 0, color);
 }
 
+float textWidth(const char* text, float pixelSize) {
+    return stb_easy_font_width(const_cast<char*>(text)) * pixelSize;
+}
+
 void drawText(const char* text, float centerX, float centerY, float pixelSize,
               glm::vec3 color) {
-    int length = static_cast<int>(std::strlen(text));
-    float left = centerX - (length * 6 - 1) * pixelSize * 0.5f;
-    for (int letter = 0; letter < length; ++letter) {
-        const unsigned char* rows = getLetterPattern(text[letter]);
-        if (!rows) continue; // Spaces leave a gap.
-        for (int row = 0; row < 7; ++row) {
-            for (int column = 0; column < 5; ++column) {
-                if ((rows[row] & (1 << (4 - column))) == 0) continue;
-                drawRectangle(left + (letter * 6 + column + 0.5f) * pixelSize,
-                              centerY + (3 - row) * pixelSize,
-                              pixelSize * 0.92f, pixelSize * 0.92f, 0.0f,
-                              color.r, color.g, color.b);
-            }
-        }
+    if (!text[0]) return;
+    // stb returns four vertices per rectangular stroke, with y pointing down.
+    struct FontVertex { float x, y, z; unsigned char color[4]; };
+    std::vector<FontVertex> vertices(std::strlen(text) * 128);
+    int quads = stb_easy_font_print(0, 0, const_cast<char*>(text), nullptr,
+                                   vertices.data(), static_cast<int>(vertices.size() * sizeof(FontVertex)));
+    if (quads == 0) return;
+    float top = vertices[0].y, bottom = top;
+    for (int vertex = 0; vertex < quads * 4; ++vertex) {
+        top = std::min(top, vertices[vertex].y);
+        bottom = std::max(bottom, vertices[vertex].y);
+    }
+    float left = centerX - textWidth(text, pixelSize) * 0.5f;
+    float middleY = (top + bottom) * 0.5f;
+    for (int quad = 0; quad < quads; ++quad) {
+        const FontVertex& first = vertices[quad * 4];
+        const FontVertex& opposite = vertices[quad * 4 + 2];
+        // Reuse our triangle-based rectangle renderer for core-profile OpenGL.
+        drawRectangle(left + (first.x + opposite.x) * 0.5f * pixelSize,
+                      centerY - ((first.y + opposite.y) * 0.5f - middleY) * pixelSize,
+                      (opposite.x - first.x) * pixelSize,
+                      (opposite.y - first.y) * pixelSize, 0,
+                      color.r, color.g, color.b);
     }
 }
 
@@ -1338,11 +1319,10 @@ void drawMenuButton(const char* label, float x, float y, float width, bool hover
     drawRectangle(x, y, width - 0.025f, menuButtonHeight - 0.025f,
                   0.0f, fill.r, fill.g, fill.b);
     // Long labels shrink to fit inside the button; shorter ones keep the usual size.
-    int length = static_cast<int>(std::strlen(label));
     float textSize = 0.011f;
-    float textWidth = (length * 6 - 1) * textSize;
+    float labelWidth = textWidth(label, textSize);
     float maxWidth = width - 0.07f;
-    if (textWidth > maxWidth) textSize *= maxWidth / textWidth;
+    if (labelWidth > maxWidth) textSize *= maxWidth / labelWidth;
     drawText(label, x, y, textSize, glm::vec3(1.0f, 0.93f, 0.72f));
 }
 
@@ -1573,8 +1553,8 @@ void drawPlayerCards(int hoveredCard) {
         drawRectangle(x, cardY - 0.115f, 0.114f, 0.052f, 0,
                       border.r, border.g, border.b);
         drawRectangle(x, cardY - 0.115f, 0.108f, 0.046f, 0, 0.10f, 0.12f, 0.14f);
-        drawNumber(cardCosts[card],
-                   x, cardY - 0.115f, 0.40f, true);
+        drawText(std::to_string(cardCosts[card]).c_str(),
+                 x, cardY - 0.115f, 0.006f, glm::vec3(1.0f, 0.9f, 0.55f));
         if (!available) {
             float lockX = x + 0.083f, lockY = cardY - 0.116f;
             drawRectangle(lockX, lockY + 0.014f, 0.018f, 0.024f, 0, 0.6f, 0.6f, 0.6f);
@@ -1740,51 +1720,6 @@ void drawGoldenScarab(float x, float y, float scale) {
     drawRectangle(x, y, 0.005f * scale, 0.065f * scale, 0.0f, 0.4f, 0.26f, 0.08f);
 }
 
-void drawNumber(int number, float originX, float originY, float size, bool centered) {
-    // Seven-segment digits: bits represent top, upper-right, lower-right,
-    // bottom, lower-left, upper-left, and middle segments respectively.
-    const unsigned int digitMasks[] = {
-        0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F
-    };
-    const float segmentX[] = {0.0f, 0.024f, 0.024f, 0.0f, -0.024f, -0.024f, 0.0f};
-    const float segmentY[] = {0.05f, 0.025f, -0.025f, -0.05f, -0.025f, 0.025f, 0.0f};
-    char digits[16];
-    std::snprintf(digits, sizeof(digits), "%d", number);
-    int digitCount = static_cast<int>(std::strlen(digits));
-    // Fit longer balances into the same panel rather than overflowing it.
-    float scale = size * (digitCount > 4 ? 4.0f / digitCount : 1.0f);
-    if (centered) {
-        // Center the visible segments, including narrow digits such as 1.
-        float left = 100.0f, right = -100.0f;
-        for (int digit = 0; digit < digitCount; ++digit) {
-            int value = digits[digit] - '0';
-            if (value < 0 || value > 9) continue;
-            for (int segment = 0; segment < 7; ++segment) {
-                if ((digitMasks[value] & (1u << segment)) == 0) continue;
-                bool horizontal = segment == 0 || segment == 3 || segment == 6;
-                float center = digit * 0.09f + segmentX[segment];
-                float halfWidth = (horizontal ? 0.048f : 0.008f) * 0.5f;
-                left = std::min(left, center - halfWidth);
-                right = std::max(right, center + halfWidth);
-            }
-        }
-        originX -= (left + right) * 0.5f * scale;
-    }
-    for (int digit = 0; digit < digitCount; ++digit) {
-        int value = digits[digit] - '0';
-        if (value < 0 || value > 9) continue;
-        float x = originX + digit * 0.09f * scale;
-        for (int segment = 0; segment < 7; ++segment) {
-            if ((digitMasks[value] & (1u << segment)) == 0) continue;
-            bool horizontal = segment == 0 || segment == 3 || segment == 6;
-            drawRectangle(x + segmentX[segment] * scale, originY + segmentY[segment] * scale,
-                          (horizontal ? 0.048f : 0.008f) * scale,
-                          (horizontal ? 0.008f : 0.05f) * scale,
-                          0.0f, 1.0f, 0.9f, 0.55f);
-        }
-    }
-}
-
 void drawGameStatus(int balance, int waveIndex) {
     const glm::vec3 gold(0.88f, 0.68f, 0.34f);
     drawPanelRectangle(.6f, .82f, .60f, .26f, glm::vec3(.66f, .46f, .25f));
@@ -1800,17 +1735,18 @@ void drawGameStatus(int balance, int waveIndex) {
     drawPanelRectangle(.37f, .82f, .104f, .194f, gold);
     drawPanelRectangle(.37f, .82f, .092f, .182f, glm::vec3(.09f, .25f, .31f));
     drawGoldenScarab(.37f, .82f, .90f);
-    drawNumber(balance, .53f, .842f,
-               balance < 1000 ? .80f : .58f, true);
+    std::string balanceText = std::to_string(balance);
+    float balanceSize = std::min(0.012f, 0.18f / textWidth(balanceText.c_str(), 1.0f));
+    drawText(balanceText.c_str(), .53f, .842f, balanceSize, glm::vec3(1.0f, 0.9f, 0.55f));
     drawText("SCARABS",
              .53f, .755f, .0034f, glm::vec3(.81f, .70f, .51f));
     drawPanelRectangle(.767f, .82f, .206f, .194f, gold);
     drawPanelRectangle(.767f, .82f, .194f, .182f, glm::vec3(.09f, .25f, .31f));
     drawText("WAVE",
              .767f, .876f, .0042f, glm::vec3(.95f, .84f, .61f));
-    drawNumber(std::min(waveIndex + 1, waveCount), .717f, .79f, .52f, true);
-    drawPanelRectangle(.767f, .79f, .003f, .046f, gold, -25);
-    drawNumber(waveCount, .814f, .79f, .38f, true);
+    std::string waveText = std::to_string(std::min(waveIndex + 1, waveCount)) +
+                           "/" + std::to_string(waveCount);
+    drawText(waveText.c_str(), .767f, .79f, .0075f, glm::vec3(1.0f, 0.9f, 0.55f));
 }
 
 void drawArrow(const Projectile& arrow) {
@@ -1980,31 +1916,12 @@ void drawMainMenu(int hoveredButton) {
     }
 }
 
-// The letter font has no percent sign, so it is built from two dots and a slash.
-void drawPercentSign(float x, float y, float size, glm::vec3 color) {
-    drawRectangle(x, y, size * 0.9f, size * 7.0f, -0.6f, color.r, color.g, color.b);
-    drawRectangle(x - size * 1.8f, y + size * 2.3f, size * 1.6f, size * 1.6f, 0.0f,
-                  color.r, color.g, color.b);
-    drawRectangle(x + size * 1.8f, y - size * 2.3f, size * 1.6f, size * 1.6f, 0.0f,
-                  color.r, color.g, color.b);
-}
-
-// Draws "VOLUME 70%" (or "MUTED 70%") centered on x.
+// The font draws the complete readout, including digits and the percent sign.
 void drawVolumeReadout(float x, float y, float size, glm::vec3 color) {
-    int percent = audio::volumePercent();
-    const char* label = audio::isMuted() ? "MUTED" : "VOLUME";
-    int labelLength = audio::isMuted() ? 5 : 6;
-    int digits = percent >= 100 ? 3 : (percent >= 10 ? 2 : 1);
-    // Letters are 7 text pixels tall; this digit scale gives digits the same height.
-    float numberScale = size * 65.0f;
-    float labelWidth = labelLength * 6 * size;
-    float numberWidth = digits * 0.09f * numberScale;
-    float total = labelWidth + size * 4 + numberWidth + size * 6;
-    float left = x - total * 0.5f;
-    drawText(label, left + labelWidth * 0.5f, y, size, color);
-    float numberLeft = left + labelWidth + size * 4;
-    drawNumber(percent, numberLeft + numberWidth * 0.5f, y, numberScale, true);
-    drawPercentSign(numberLeft + numberWidth + size * 3.5f, y, size, color);
+    char text[32];
+    std::snprintf(text, sizeof(text), "%s %d%%",
+                  audio::isMuted() ? "MUTED" : "VOLUME", audio::volumePercent());
+    drawText(text, x, y, size, color);
 }
 
 void drawSoundMenu(int hoveredButton) {
