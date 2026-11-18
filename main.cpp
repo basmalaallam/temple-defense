@@ -377,7 +377,7 @@ float getJumpHeight(const Player& player) {
 
 Player* findShieldProtector(const Player& ally, float attackX) {
     Player* protector = nullptr;
-    for (Player& candidate : players) {
+    for (Player& candidate : players) { //loop through all players to find a shield guardian that can protect the ally
         if (candidate.health <= 0 || candidate.type != PlayerType::ShieldGuardian ||
             candidate.lane != ally.lane || &candidate == &ally) continue;
         // New units overlap at the entry point, so equality must count as shield protection.
@@ -390,8 +390,8 @@ Player* findShieldProtector(const Player& ally, float attackX) {
 }
 
 void damagePlayer(Player& intendedTarget, int damage, float attackX) {
-    Player* protector = findShieldProtector(intendedTarget, attackX);
-    Player& receiver = protector ? *protector : intendedTarget;
+    Player* protector = findShieldProtector(intendedTarget, attackX); //checks whether a shiel exists
+    Player& receiver = protector ? *protector : intendedTarget; //if yes, the shield takes the damage, otherwise the intended target takes the damage
     receiver.health = glm::max(0, receiver.health - damage);
     if (receiver.health == 0) receiver.action = CharacterAction::Defeated;
 }
@@ -446,14 +446,14 @@ static void updateEnemyRangedAttacks(EnemyType type, std::vector<Projectile>& sh
     const float attackRange = 0.65f;
     const float attackInterval = 1.2f;
     for (Enemy& enemy : enemies) {
-        if (enemy.type != type) continue;
+        if (enemy.type != type) continue; //only update the specified enemy type
         if (enemy.health <= 0) {
             enemy.attackTimer = 0.0f;
             continue;
         }
 
         bool hasTarget = false;
-        for (const Player& player : players) {
+        for (const Player& player : players) { //detect a target
             if (player.health <= 0 || player.lane != enemy.lane) continue;
             float distance = enemy.x - player.x;
             bool inRange = distance >= 0.0f && distance <= attackRange;
@@ -466,7 +466,7 @@ static void updateEnemyRangedAttacks(EnemyType type, std::vector<Projectile>& sh
             continue;
         }
 
-        enemy.attackTimer += deltaTime;
+        enemy.attackTimer += deltaTime; // create projectile
         while (enemy.attackTimer >= attackInterval) {
             enemy.attackTimer -= attackInterval;
             shots.push_back({enemy.lane, enemy.x + shotOffsetX, enemy.y + shotOffsetY});
@@ -583,18 +583,18 @@ void updateArrows(float deltaTime) {
 
 void updateMeleeCombat(float deltaTime) {
     for (Player& player : players) {
-        if (player.type != PlayerType::TempleWarrior) continue;
+        if (player.type != PlayerType::TempleWarrior) continue; //only tmemple warrior proceeds
         if (player.health <= 0) {
             player.attackTimer = 0.0f;
             continue;
         }
 
-        Enemy* target = nullptr;
+        Enemy* target = nullptr; //ptr ro enemy that will be attacked
         for (Enemy& enemy : enemies) {
-            if (enemy.health <= 0 || enemy.lane != player.lane) continue;
+            if (enemy.health <= 0 || enemy.lane != player.lane) continue; //loop through enemies and skip enemies that are dead or not in the same lane
             float distance = glm::abs(enemy.x - player.x);
             bool inRange = distance <= encounterDistance + 0.0001f;
-            if (!inRange) continue;
+            if (!inRange) continue; //enemy is not in range, continue to next enemy
             target = &enemy;
             break; // One opponent per swing.
         }
@@ -606,10 +606,11 @@ void updateMeleeCombat(float deltaTime) {
         player.attackTimer += deltaTime;
         while (player.attackTimer >= meleeAttackInterval && target->health > 0) {
             player.attackTimer -= meleeAttackInterval;
-            target->health = glm::max(0, target->health - 1);
+            target->health = glm::max(0, target->health - 1); //changes the damage done by templewarrior
         }
         if (target->health > 0) continue;
-        target->action = CharacterAction::Defeated;
+        //when target dies, set the action to defeated and reset the attack timer
+        target->action = CharacterAction::Defeated; 
         player.attackTimer = 0.0f;
     }
 
@@ -673,24 +674,25 @@ void removeDefeatedCharacters() {
     // Drop the coin before removing the enemy, so each enemy pays out once.
     for (const Enemy& enemy : enemies) {
         if (enemy.health <= 0)
-            collectibles.push_back({enemy.lane, enemy.x, enemy.y});
+            collectibles.push_back({enemy.lane, enemy.x, enemy.y}); //if a enemy is defeated, push a collectible to the collectibles vector
     }
-    players.erase(std::remove_if(players.begin(), players.end(),
+    players.erase(std::remove_if(players.begin(), players.end(), //remove dead players from the players vector
         [](const Player& player) { return player.health <= 0; }), players.end());
     enemies.erase(std::remove_if(enemies.begin(), enemies.end(),
         [](const Enemy& enemy) { return enemy.health <= 0; }), enemies.end());
 }
 
 void updateCombatStates() {
-    // Re-evaluate contact so survivors can move again after an opponent is removed.
+    // Reset states so survivors can move again after an opponent is removed.
     for (Player& player : players) {
         if (player.action == CharacterAction::Attacking)
             player.action = CharacterAction::Walking;
     }
-    for (Enemy& enemy : enemies) {
+    for (Enemy& enemy : enemies) {                                      
         if (enemy.action == CharacterAction::Attacking)
             enemy.action = CharacterAction::Walking;
     }
+    // detect encounters and set the action states for both players and enemies
     for (Player& player : players) {
         if (player.health <= 0) continue;
         for (Enemy& enemy : enemies) {
@@ -698,6 +700,7 @@ void updateCombatStates() {
             float distance = glm::abs(enemy.x - player.x);
             bool inRange = distance <= encounterDistance + 0.0001f;
             if (!inRange) continue;
+            //set action states for both player and enemy when they are in range of each other
             enemy.action = CharacterAction::Attacking;
             if (player.action == CharacterAction::Ducking ||
                 player.action == CharacterAction::Jumping) continue;
@@ -740,31 +743,31 @@ void updateEnemies(float deltaTime) {
     const float bruteSpeed = 0.14f;
 
     for (Enemy& enemy : enemies) {
-        if (enemy.health <= 0 || enemy.action != CharacterAction::Walking) continue;
+        if (enemy.health <= 0 || enemy.action != CharacterAction::Walking) continue; // loop thorugh enemies and skip enemies that are dead or not walking
 
         float speed = enemy.type == EnemyType::JackalBrute ? bruteSpeed : normalSpeed;
         float oldX = enemy.x;
-        float targetX = enemy.x - speed * deltaTime;
+        float targetX = enemy.x - speed * deltaTime; //moving from right to left
         for (const Player& player : players) {
             if (player.health > 0 && player.lane == enemy.lane && player.x <= enemy.x)
                 targetX = glm::max(targetX, player.x + encounterDistance);
         }
-        enemy.x = glm::min(enemy.x, targetX);
+        enemy.x = glm::min(enemy.x, targetX); //prevents enemies from moving right
         // checkGameResult() ends the game when a living enemy reaches this boundary.
         if (enemy.x <= fieldLeft) {
             enemy.x = fieldLeft;
             enemy.action = CharacterAction::Idle;
         }
-        enemy.walkPhase = std::fmod(enemy.walkPhase + (oldX - enemy.x) * 75.0f, 6.2831853f);
+        enemy.walkPhase = std::fmod(enemy.walkPhase + (oldX - enemy.x) * 75.0f, 6.2831853f); //update waalking animation
     }
 }
 
 void updateWaves(std::mt19937& randomGenerator, float deltaTime) {
-    if (wave.waveIndex >= waveCount) return;
+    if (wave.waveIndex >= waveCount) return; //spawned every wave?
 
     // The next wave waits until every enemy from this wave has been removed.
     if (wave.enemiesSpawned == waveEnemyCounts[wave.waveIndex]) {
-        if (!enemies.empty()) return;
+        if (!enemies.empty()) return; //next wave waits for all enemies to be removed.
         ++wave.waveIndex;
         wave.enemiesSpawned = 0;
         wave.spawnTimer = 0.0f;
@@ -772,7 +775,7 @@ void updateWaves(std::mt19937& randomGenerator, float deltaTime) {
     }
 
     const float spawnInterval = 4.5f; // More time to reinforce lanes between enemies.
-    std::uniform_int_distribution<int> randomLane(0, laneCount - 1);
+    std::uniform_int_distribution<int> randomLane(0, laneCount - 1); // Random lane for each enemy in the wave.
     wave.spawnTimer += deltaTime;
     while (wave.enemiesSpawned < waveEnemyCounts[wave.waveIndex] &&
            (wave.enemiesSpawned == 0 || wave.spawnTimer >= spawnInterval)) {
@@ -789,8 +792,8 @@ void updateWaves(std::mt19937& randomGenerator, float deltaTime) {
         }
         int lane = randomLane(randomGenerator);
         float y = laneCenterY(lane);
-        enemies.emplace_back(type, lane, fieldRight, y);
-        ++wave.enemiesSpawned;
+        enemies.emplace_back(type, lane, fieldRight, y); //spawn at right edge of screen
+        ++wave.enemiesSpawned; //increase counter for enemies spanwed at this wave
     }
 }
 
